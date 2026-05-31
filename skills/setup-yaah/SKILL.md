@@ -42,7 +42,10 @@ Run once per repo. Re-run any time to change choices.
   - `*.gradle*` → `./gradlew test`; `pom.xml` → `mvn test`.
   - none found → ask the user for the test and lint commands.
 - **Issue label** — list the tracker's labels (`gh label list` / `glab label list`) and ask which to apply to forge-created issues (e.g. `ready-for-agent`). Blank = none.
-- **Implementer engine** — which agent runs forge's Phase 3 build + Phase 4 fix loop. Default **claude** (a Claude Code subagent — no extra setup). Detect **cursor** as available when `cursor-agent --version` succeeds; offer it only then. The cursor engine is non-interactive, so it needs auth ahead of time: `CURSOR_API_KEY` in the environment, or a prior `cursor-agent login` (`cursor-agent status` confirms). Warn (don't write `cursor`) if neither is present. `implementer.model` is optional — blank uses the CLI's default; `cursor-agent --list-models` lists valid names.
+- **Implementer engine** — which agent runs forge's Phase 3 build + Phase 4 fix loop. Default **claude** (a Claude Code subagent — no extra setup). Two CLI engines may be offered, each only when its binary is present and authed (warn and keep `claude` otherwise):
+  - **cursor** — available when `cursor-agent --version` succeeds. Needs auth ahead of time (non-interactive): `CURSOR_API_KEY`, or a prior `cursor-agent login` (`cursor-agent status` confirms). Model names: `cursor-agent --list-models`.
+  - **codex** — available when `codex --version` succeeds. Needs auth: `codex login status` shows logged in, else `codex login` or `OPENAI_API_KEY`. Model = the value in `~/.codex/config.toml` unless overridden.
+  `implementer.model` is optional and **engine-specific** (a cursor model id is not a valid codex one) — blank uses that engine's default.
 - **Token-efficiency tools** — detect each, propose `true` only if already present, and offer to install the rest (full recipes in [efficiency-tools.md](efficiency-tools.md)):
   - **graphify** — `graphify --version` ok or `graphify-out/graph.json` exists → installed. Install: `pip install graphifyy`. Wire per-repo: `graphify .` (first build) + `graphify claude install` (CLAUDE.md section + Glob/Grep hook). forge refreshes it in Phase 6.
   - **rtk** — `rtk --version` ok → installed. Install: `brew install rtk` (or the curl/cargo forms). Wire global hook: `rtk init -g`, then restart Claude Code.
@@ -54,7 +57,7 @@ Run once per repo. Re-run any time to change choices.
 2. **Default branch** — `<detected>` or blank for run-time auto-detect?
 3. **Checks** — confirm/edit the ordered list of commands the TDD subagent runs and forge re-checks before merge. Each must exit non-zero on failure.
 4. **Issue label** — which label (if any) to tag forge-created issues with?
-5. **Implementer engine** — `claude` (default, no setup) or `cursor`? Offer `cursor` only if `cursor-agent` is installed; if chosen, confirm `CURSOR_API_KEY`/login is set and optionally ask for a model (blank = the CLI's default).
+5. **Implementer engine** — `claude` (default, no setup), `cursor`, or `codex`? Offer a CLI engine only if its binary is installed; if chosen, confirm that engine's auth is set up and optionally ask for a model (blank = that engine's default).
 6. **graphify** — codebase knowledge graph? If absent, offer to `pip install graphifyy` + build + wire the hook. forge refreshes it in Phase 6. (`true`/`false`)
 7. **rtk** — global token-saving Bash proxy? If absent, offer to install + `rtk init -g`. (`true`/`false`)
 8. **caveman** — global terse-output mode? If absent, offer to install. (`true`/`false`)
@@ -81,11 +84,13 @@ checks:
 
 # Engine that runs forge's Phase 3 build and every Phase 4 fix round.
 #   claude = a Claude Code subagent (Agent tool) — no extra setup.
-#   cursor = the `cursor-agent` CLI run headlessly in the worktree
+#   cursor = the `cursor-agent` CLI headless in the worktree
 #            (needs cursor-agent installed + CURSOR_API_KEY or `cursor-agent login`).
+#   codex  = the OpenAI `codex exec` CLI headless in the worktree
+#            (needs codex installed + `codex login` or OPENAI_API_KEY).
 implementer:
-  engine: claude       # claude | cursor
-  model: ""            # cursor only: model override; "" = the CLI's default (see `cursor-agent --list-models`)
+  engine: claude       # claude | cursor | codex
+  model: ""            # cursor/codex: model override; "" = that engine's default (model ids are engine-specific)
 
 # Token-efficiency tools (all optional, independent). graphify is per-repo and
 # consumed by forge; rtk and caveman are global/machine-level and work via their
@@ -104,7 +109,7 @@ After writing it:
 ## Notes
 
 - This skill only writes config and (with consent) runs installers; it does not change skill bodies. forge stays stack-agnostic and reads `cli`, `checks`, `default_branch`, `issue_label`, `implementer.*`, and `tools.*` from the file.
-- **Implementer engine is `claude` unless the user opts into `cursor`.** Never write `cursor` without confirming `cursor-agent` is installed AND auth is set up — an unauthed cursor engine hard-blocks forge at Phase 0. A missing `implementer` block is read by forge as `claude` (backward-compatible).
+- **Implementer engine is `claude` unless the user opts into a CLI engine (`cursor` or `codex`).** Never write a CLI engine without confirming its binary is installed AND its auth is set up — an unauthed CLI engine hard-blocks forge at Phase 0. When switching engines, reset `model` (ids don't transfer between engines). A missing `implementer` block is read by forge as `claude` (backward-compatible).
 - **Never install a global tool (rtk, caveman) or pip package without the user's explicit OK.** Show the command, confirm, then run it. rtk and caveman need a Claude Code restart to take effect — tell the user.
 - The `tools:` block is optional in older configs; forge also honors a legacy top-level `graphify:` key. New configs should use the block.
 - If `.yaah/config.yml` already exists, show it and ask which fields to change rather than starting over.

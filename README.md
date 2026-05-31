@@ -100,7 +100,7 @@ Phase 0  CONFIG+WT read .yaah/config.yml, create an isolated worktree off the
                    latest default branch, cd in   (runs /setup-yaah if no config)
 Phase 1  GRILL     /grill-with-docs        interactive — lock requirements + docs
 Phase 2  ISSUE     /to-issues              create issue(s) on GitHub or GitLab
-Phase 3  BUILD     /handoff → implementer (claude | cursor) → /tdd
+Phase 3  BUILD     /handoff → implementer (claude | cursor | codex) → /tdd
                                            implement test-first, open a PR/MR, link the issue
 Phase 4  REVIEW    /thermo-nuclear-code-quality-review
                                            review → fix loop until clean (no cap)
@@ -172,8 +172,8 @@ checks:                # run in order; each MUST exit non-zero on failure
   - "npm run lint"
 
 implementer:           # engine that runs the Phase 3 build + Phase 4 fix loop
-  engine: claude       # claude (a Claude Code subagent) | cursor (the cursor-agent CLI)
-  model: ""            # cursor only: model override, "" = the CLI's default
+  engine: claude       # claude (Claude Code subagent) | cursor (cursor-agent CLI) | codex (codex exec CLI)
+  model: ""            # cursor/codex: model override, "" = that engine's default
 
 tools:                 # token-efficiency tools (all optional, independent)
   graphify: false      # codebase knowledge graph; forge runs `graphify update .` in Phase 6
@@ -181,13 +181,16 @@ tools:                 # token-efficiency tools (all optional, independent)
   caveman: false       # terse-output agent mode (global Claude Code plugin)
 ```
 
-> **Pluggable implementer.** The agent that writes the code in Phase 3 (and every
-> Phase 4 fix round) is swappable: `engine: claude` spawns a Claude Code subagent (the
-> default), while `engine: cursor` shells out to the headless [`cursor-agent`](https://cursor.com/cli)
-> CLI inside the worktree (`-p --force --trust`, fully autonomous). Same build/fix prompt
-> either way — only the delivery changes. The cursor engine needs `cursor-agent` installed
-> and authed (`CURSOR_API_KEY` or `cursor-agent login`); forge preflights it at Phase 0.
-> A missing `implementer` block reads as `claude`.
+> **Pluggable implementer.** The agent that writes the code in Phase 3 (and every Phase 4
+> fix round) is swappable. `engine: claude` (default) spawns a Claude Code subagent; the two
+> CLI engines instead shell out to a headless coding-agent binary inside the worktree, fully
+> autonomous, returning the same receipt:
+> - `engine: cursor` → [`cursor-agent`](https://cursor.com/cli) (`-p --force --trust`), authed via `CURSOR_API_KEY` or `cursor-agent login`.
+> - `engine: codex` → OpenAI [`codex exec`](https://developers.openai.com/codex/cli) (`--dangerously-bypass-approvals-and-sandbox`), authed via `codex login` or `OPENAI_API_KEY`.
+>
+> Same build/fix prompt either way — only the delivery changes. forge preflights the chosen
+> CLI at Phase 0 (a missing/unauthed binary is a hard blocker). `model` is engine-specific
+> (reset it when switching); a missing `implementer` block reads as `claude`.
 
 > Older configs may carry a top-level `graphify: true` instead of the `tools:` block;
 > forge still honors it. New configs written by `/setup-yaah` use the block.

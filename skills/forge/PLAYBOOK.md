@@ -9,7 +9,7 @@ Per-phase mechanics, the subagent prompt templates, and edge cases. SKILL.md is 
 - Parse the **last two stdout lines**: `WORKTREE=…` and `BRANCH=…`. Put both in the state block.
 - **`cd "$WORKTREE"`** and stay there. That makes the worktree the working root for every file edit, sub-skill, and command for the rest of the run — the single mechanism that keeps parallel /forge runs from colliding. Address files relative to it or as `$WORKTREE/…`; never reach back into the main checkout (your original cwd) until Phase 6.
 - If the script dies (not a git repo, no base branch, mktemp/worktree-add failure), that's a hard blocker — report and stop. Do NOT fall back to working on the base branch.
-- **If `implementer.engine` is `cursor`**, preflight the CLI before Phase 1 (it is exercised in Phase 3 and every Phase 4 fix round) — see the preflight block in **Implementer engines** under Phase 3. A missing or unauthed `cursor-agent` is a hard blocker.
+- **If `implementer.engine` is `cursor` or `codex`**, preflight that CLI before Phase 1 (it is exercised in Phase 3 and every Phase 4 fix round) — see the per-engine preflight block in **Implementer engines** under Phase 3. A missing or unauthed CLI is a hard blocker.
 
 ## Phase 1 — GRILL (interactive)
 
@@ -67,11 +67,15 @@ Do this:
 
 ### Implementer engines
 
-The build prompt above and the fix prompt in Phase 4 are **engine-agnostic** — the same text runs under either engine. `implementer.engine` in config picks the delivery; `implementer.model` (cursor only) optionally overrides the model. A missing block ⇒ `claude`. Receipt format and success contract are identical; only *how* the prompt is delivered and the receipt is read differs.
+The build prompt above and the fix prompt in Phase 4 are **engine-agnostic** — the same text runs under any engine. `implementer.engine` is `claude` (default), `cursor`, or `codex`; `implementer.model` (cursor/codex) optionally overrides the model. A missing block ⇒ `claude`. Receipt format and success contract are identical; only *how* the prompt is delivered and the receipt is read differs. `cursor` and `codex` are **CLI engines** — both run an autonomous coding-agent binary headlessly inside `$WORKTREE`, share the prompt-adaptation + timeout + preflight rules, and differ only in flag syntax and how the receipt is read.
 
-**`claude` (default).** Spawn exactly **one** subagent via the Agent tool, `subagent_type: general-purpose` (it needs Bash + the tracker CLI + edit tools), cwd `$WORKTREE`, prompt = the build prompt (Phase 3) or the fix prompt (Phase 4). The subagent's final message **is** the receipt. Fix rounds are a fresh Agent call with the fix prompt.
+#### `claude` (default) — a Claude Code subagent
 
-**`cursor`.** Run the `cursor-agent` CLI (Cursor's coding agent) headlessly against the worktree. Under `-p --force` it edits files and runs shell commands — git, `gh`/`glab`, the configured checks — with no approval prompt, which is exactly what an autonomous builder needs. The binary is `cursor-agent` (an `agent` alias also exists; prefer `cursor-agent` to avoid PATH collisions).
+Spawn exactly **one** subagent via the Agent tool, `subagent_type: general-purpose` (it needs Bash + the tracker CLI + edit tools), cwd `$WORKTREE`, prompt = the build prompt (Phase 3) or the fix prompt (Phase 4). The subagent's final message **is** the receipt. Fix rounds are a fresh Agent call with the fix prompt.
+
+#### `cursor` — the Cursor Agent CLI
+
+Run the `cursor-agent` CLI (Cursor's coding agent) headlessly against the worktree. Under `-p --force` it edits files and runs shell commands — git, `gh`/`glab`, the configured checks — with no approval prompt, which is exactly what an autonomous builder needs. The binary is `cursor-agent` (an `agent` alias also exists; prefer `cursor-agent` to avoid PATH collisions).
 
 *Preflight* (Phase 0, once per run — each is a hard blocker on failure):
 ```
@@ -91,10 +95,41 @@ cursor-agent -p --force --trust \
 - **Run it under a timeout** — the CLI has known hangs. Invoke via the Bash tool with its `timeout` raised toward the 600000 ms max, and/or prefix `timeout 600` / `gtimeout 600` where that binary exists. A timeout counts as a failed round → re-run with tightened guidance.
 - **Success gate: exit code 0 AND `.is_error == false`.** Never infer success from stdout text alone.
 
-*Prompt adaptation (cursor only).* `cursor-agent` has no Claude Code skills, so replace the build contract's step 2 — "Invoke the /tdd skill…" — with this inline directive:
+*Prompt adaptation (CLI engines — cursor & codex).* Neither CLI has Claude Code skills, so replace the build contract's step 2 — "Invoke the /tdd skill…" — with this inline directive:
 > Work strictly test-first in **red → green → refactor** cycles, one behavior at a time. Build **vertical tracer bullets** (a thin slice through every layer), not horizontal layers. Test behavior through **public interfaces**, never implementation details; mock only true external boundaries (network, clock, filesystem), never internal collaborators. Refactor only on green. Do NOT create a new branch.
 
-(Optional alternative: write those standing rules to `$WORKTREE/AGENTS.md` before the run — `cursor-agent` auto-reads `AGENTS.md` at the workspace root — and keep the prompt to the actionable task. Inlining is the simpler, self-contained default.)
+(Optional alternative: write those standing rules to `$WORKTREE/AGENTS.md` before the run — both `cursor-agent` and `codex` auto-read `AGENTS.md` at the workspace root — and keep the prompt to the actionable task. Inlining is the simpler, self-contained default.)
+
+#### `codex` — the OpenAI Codex CLI
+
+Run the `codex` CLI's non-interactive `exec` subcommand against the worktree. Under `--dangerously-bypass-approvals-and-sandbox` it edits files and runs shell commands (git, `gh`/`glab`, the checks) with no approval prompt and no sandbox — the network access a push/PR needs. (Don't rely on a shell alias for that flag; pass it explicitly.)
+
+*Preflight* (Phase 0, once per run — each a hard blocker on failure):
+```
+codex --version          # present? else install:  npm i -g @openai/codex   (or brew install codex)
+codex login status       # authed? else  codex login   (or set OPENAI_API_KEY / codex login --with-api-key)
+```
+
+*Build invocation* (`RECEIPT` is a temp file OUTSIDE the worktree so the agent can't commit it; add `--model "$MODEL"` only when `implementer.model` is set):
+```
+RECEIPT="$(mktemp)"
+codex exec --dangerously-bypass-approvals-and-sandbox \
+  --cd "$WORKTREE" \
+  --output-last-message "$RECEIPT" \
+  "$BUILD_PROMPT"
+```
+- `exec` = non-interactive (no approval prompts by design); `--dangerously-bypass-approvals-and-sandbox` additionally drops the sandbox so writes + network work. `--cd "$WORKTREE"` sets the working root. `-m/--model` optional (blank ⇒ the model from `~/.codex/config.toml`).
+- `--output-last-message "$RECEIPT"` writes the agent's final message to that file — **that file is the receipt.** Read it after the run. (`--json` would stream JSONL events instead; not needed when you only want the receipt.)
+- Same **timeout** wrapper as cursor (raise the Bash-tool timeout, optionally prefix `timeout`/`gtimeout`).
+- **Success gate: exit code 0** (codex exits non-zero on failure, with the error on stderr; there is no `is_error` field). Read the receipt only on exit 0.
+
+*Fix round (codex).* Resume the build session so context carries over. `codex exec resume` remembers the session's cwd, so it takes **no `--cd`** — run it from inside `$WORKTREE`:
+```
+codex exec resume --last --dangerously-bypass-approvals-and-sandbox \
+  --output-last-message "$RECEIPT" \
+  "$FIX_PROMPT"
+```
+`--last` resumes the most recent session for the current cwd (worktree) — robust across parallel runs since each worktree has its own cwd. For an explicit handle instead, capture the `session_id` from a build run with `--json` and resume by id: `codex exec resume <session_id> …`.
 
 ## Phase 4 — REVIEW (loop, no cap)
 
@@ -134,6 +169,12 @@ Do this:
     --output-format json "$FIX_PROMPT"
   ```
   `--resume "$SID"` continues the build session captured in state (`--continue` resumes the most recent if the id is lost); add `--model "$MODEL"` if set. Same success gate (exit 0 + `.is_error == false`) and timeout wrapper as the build invocation. For cursor, the per-thread replies (step 3) are ordinary `gh`/`glab` shell commands it runs under `--force`.
+- `codex`: resume the build session (run from inside `$WORKTREE`; `resume` takes no `--cd`) —
+  ```
+  codex exec resume --last --dangerously-bypass-approvals-and-sandbox \
+    --output-last-message "$RECEIPT" "$FIX_PROMPT"
+  ```
+  `--last` continues the most recent session for that worktree's cwd (or pass an explicit `<session_id>`); add `--model "$MODEL"` if set. Receipt = the `$RECEIPT` file; success gate = exit 0. Replies (step 3) are ordinary `gh`/`glab` commands codex runs under bypass.
 
 ## Phase 5 — RECAP
 
@@ -166,8 +207,8 @@ Print, in this order:
 - **Worktree script fails:** hard blocker — do not fall back to working on the base branch.
 - **Trivial / one-liner work:** still run the full chain (issue + subagent PR/MR + review) — do NOT ask the user to skip it. The two-checkpoint contract and the PR/issue link must survive even for small changes.
 - **Subagent can't get a check to green:** it reports `open:` with the reason; you re-spawn with tightened guidance. A failed check is never on its own a hard blocker — the loop has no cap. Only a genuinely unrecoverable failure stops the run, and a red check NEVER reaches the merge gate (Phase 5/6 keep looping).
-- **`cursor-agent` missing or unauthed (engine=cursor):** hard blocker at Phase 0 preflight — surface the install (`curl https://cursor.com/install -fsS | bash`) or auth (`export CURSOR_API_KEY=…` / `cursor-agent login`) hint and stop. Do NOT silently fall back to the claude engine — the user chose cursor.
-- **`cursor-agent` run hangs or times out:** the timeout wrapper kills it; treat that round as failed and re-run (same as a failed check — no cap). Only a run that hangs on *every* retry, or exits non-zero with an unrecoverable error, stops the run.
-- **Invalid cursor model:** `cursor-agent` exits non-zero. Leave `implementer.model` blank to use the CLI's default (omit `--model`), or run `cursor-agent --list-models` to find a valid name.
+- **CLI engine missing or unauthed (engine=cursor|codex):** hard blocker at Phase 0 preflight — surface the right install/auth hint and stop. cursor: `curl https://cursor.com/install -fsS | bash` / `export CURSOR_API_KEY=…` or `cursor-agent login`. codex: `npm i -g @openai/codex` / `codex login` or `OPENAI_API_KEY`. Do NOT silently fall back to the claude engine — the user chose this engine.
+- **CLI engine run hangs or times out:** the timeout wrapper kills it; treat that round as failed and re-run (same as a failed check — no cap). Only a run that hangs on *every* retry, or exits non-zero with an unrecoverable error, stops the run.
+- **Invalid model:** the CLI exits non-zero. Leave `implementer.model` blank to use the engine's default, or list valid names — cursor: `cursor-agent --list-models`; codex: `~/.codex/config.toml` `model =` or `-m`. Note model names are engine-specific (a cursor model id like `composer-2.5` is NOT a valid codex model and vice-versa) — reset `model` when switching engines.
 - **User interrupts mid-run:** keep the state block current so the run resumes from the last completed phase; the worktree persists.
 - **Multiple issues from Phase 2:** worktree, branch, PR/MR, and `round` are **per issue**; reset `round` to 0 and create a fresh worktree when you start a new slice.
