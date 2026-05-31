@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <em><code>/forge</code> in ten seconds — <a href="docs/assets/yaah-banner.mp4">watch the MP4</a></em>
+  <em><code>/forge</code> in ten seconds</em>
 </p>
 
 # yaah — Yet Another Agent Harness
