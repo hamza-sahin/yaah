@@ -9,6 +9,7 @@ Per-phase mechanics, the subagent prompt templates, and edge cases. SKILL.md is 
 - Parse the **last two stdout lines**: `WORKTREE=…` and `BRANCH=…`. Put both in the state block.
 - **`cd "$WORKTREE"`** and stay there. That makes the worktree the working root for every file edit, sub-skill, and command for the rest of the run — the single mechanism that keeps parallel /forge runs from colliding. Address files relative to it or as `$WORKTREE/…`; never reach back into the main checkout (your original cwd) until Phase 6.
 - If the script dies (not a git repo, no base branch, mktemp/worktree-add failure), that's a hard blocker — report and stop. Do NOT fall back to working on the base branch.
+- **If `implementer.engine` is `cursor`**, preflight the CLI before Phase 1 (it is exercised in Phase 3 and every Phase 4 fix round) — see the preflight block in **Implementer engines** under Phase 3. A missing or unauthed `cursor-agent` is a hard blocker.
 
 ## Phase 1 — GRILL (interactive)
 
@@ -26,11 +27,11 @@ Per-phase mechanics, the subagent prompt templates, and edge cases. SKILL.md is 
 - **Multiple slices:** process them through Phases 3–6 **one at a time in dependency order** (blockers first). Each slice gets its own worktree, branch, PR/MR, and merge gate; `round`, `worktree`, `branch`, and `pr` are per slice. Re-print the state block when you switch slices. A dependent slice that needs an earlier slice's unmerged code should base its worktree on the blocker's branch: `forge-worktree.sh create <slug> <blocker-branch>` (the script accepts a base-ref), or merge the blocker first.
 - Do not modify or close any parent issue.
 
-## Phase 3 — BUILD (handoff → subagent → tdd)
+## Phase 3 — BUILD (handoff → implementer → tdd)
 
 1. Call the Skill tool with `handoff`, scoped to "prompt a fresh agent to implement issue #N via TDD inside `$WORKTREE`." The doc **references the issue by URL** + the grilled decisions/doc changes — it does not restate the issue body.
-2. Spawn exactly **one** subagent (Agent tool, `subagent_type: general-purpose` — needs Bash + the tracker CLI + edit tools). Its prompt = the handoff doc + the build contract below, with `<CHECKS>` and `<CLI>` filled from config.
-3. Read the returned receipt; write `pr` into state. A **missing PR/MR after a retry** is a hard blocker. A **failing check is NOT** a blocker — re-spawn the subagent with tightened guidance (the loop has no cap); only a genuinely unrecoverable failure stops the run.
+2. Deliver the build prompt to the **configured implementer engine** (`implementer.engine`, default `claude`) — exact mechanics in **Implementer engines** below. The prompt = the handoff doc + the build contract below, with `<CHECKS>` and `<CLI>` filled from config (and the `/tdd` line adapted per engine).
+3. Read the returned receipt; write `pr` (and, for cursor, the session id) into state. A **missing PR/MR after a retry** is a hard blocker. A **failing check is NOT** a blocker — re-run the implementer with tightened guidance (the loop has no cap); only a genuinely unrecoverable failure stops the run.
 
 ### Subagent build prompt (template)
 
@@ -64,13 +65,44 @@ Do this:
    summary: <2–4 lines: what you built and any caveat>
 ```
 
+### Implementer engines
+
+The build prompt above and the fix prompt in Phase 4 are **engine-agnostic** — the same text runs under either engine. `implementer.engine` in config picks the delivery; `implementer.model` (cursor only) optionally overrides the model. A missing block ⇒ `claude`. Receipt format and success contract are identical; only *how* the prompt is delivered and the receipt is read differs.
+
+**`claude` (default).** Spawn exactly **one** subagent via the Agent tool, `subagent_type: general-purpose` (it needs Bash + the tracker CLI + edit tools), cwd `$WORKTREE`, prompt = the build prompt (Phase 3) or the fix prompt (Phase 4). The subagent's final message **is** the receipt. Fix rounds are a fresh Agent call with the fix prompt.
+
+**`cursor`.** Run the `cursor-agent` CLI (Cursor's coding agent) headlessly against the worktree. Under `-p --force` it edits files and runs shell commands — git, `gh`/`glab`, the configured checks — with no approval prompt, which is exactly what an autonomous builder needs. The binary is `cursor-agent` (an `agent` alias also exists; prefer `cursor-agent` to avoid PATH collisions).
+
+*Preflight* (Phase 0, once per run — each is a hard blocker on failure):
+```
+cursor-agent --version            # present? else install:  curl https://cursor.com/install -fsS | bash
+[ -n "$CURSOR_API_KEY" ] || cursor-agent status   # authed? else  export CURSOR_API_KEY=…  or  cursor-agent login
+```
+
+*Build invocation* (pointed at `$WORKTREE`; add `--model "$MODEL"` only when `implementer.model` is set):
+```
+cursor-agent -p --force --trust \
+  --workspace "$WORKTREE" \
+  --output-format json \
+  "$BUILD_PROMPT"
+```
+- `-p` = non-interactive/print mode (grants tool access); `--force` = auto-approve edits + shell (alias `--yolo`); `--trust` = skip the workspace-trust prompt (a fresh forge worktree is an "untrusted" dir and would otherwise hang). Both `-p` **and** `--force` are required — `-p` alone only *proposes* changes, never applies them.
+- `--output-format json` emits ONE object on success: `{"result":"<final text = the receipt>","session_id":"<uuid>","is_error":false,…}`. Read `.result` for the receipt and **save `.session_id` into state** for fix rounds. (On failure no well-formed JSON is emitted — guard the parse.)
+- **Run it under a timeout** — the CLI has known hangs. Invoke via the Bash tool with its `timeout` raised toward the 600000 ms max, and/or prefix `timeout 600` / `gtimeout 600` where that binary exists. A timeout counts as a failed round → re-run with tightened guidance.
+- **Success gate: exit code 0 AND `.is_error == false`.** Never infer success from stdout text alone.
+
+*Prompt adaptation (cursor only).* `cursor-agent` has no Claude Code skills, so replace the build contract's step 2 — "Invoke the /tdd skill…" — with this inline directive:
+> Work strictly test-first in **red → green → refactor** cycles, one behavior at a time. Build **vertical tracer bullets** (a thin slice through every layer), not horizontal layers. Test behavior through **public interfaces**, never implementation details; mock only true external boundaries (network, clock, filesystem), never internal collaborators. Refactor only on green. Do NOT create a new branch.
+
+(Optional alternative: write those standing rules to `$WORKTREE/AGENTS.md` before the run — `cursor-agent` auto-reads `AGENTS.md` at the workspace root — and keep the prompt to the actionable task. Inlining is the simpler, self-contained default.)
+
 ## Phase 4 — REVIEW (loop, no cap)
 
 - **Invoke `/thermo-nuclear-code-quality-review`** (Skill tool) against the PR/MR branch diff. You orchestrate; it runs its full rubric.
 - Apply its bar: code-judo simplifications, the ~1000-line file smell, no scattered special-case branching, abstractions earning their keep, logic in the canonical layer. Prefer few high-conviction findings over many cosmetic nits.
 - **Post findings as inline review comments** on the diff (GitHub) or **MR discussions** (GitLab) and **capture each comment/discussion ID** — exact commands in `../setup-yaah/scm-commands.md`. Add a one-line status comment on the issue linking the PR/MR. Then set verdict:
   - **approved** — no presumptive blockers remain → Phase 5.
-  - **changes-requested** — re-spawn the TDD subagent (new Agent call) with the fix prompt below, passing the comment IDs. It works in the **same `$WORKTREE` / `$BRANCH`** and **replies on each comment thread** (`gh api …/replies` / `glab api …/discussions/{id}/notes`). Then re-run this phase, `round += 1`.
+  - **changes-requested** — re-run the **configured implementer** with the fix prompt below, passing the comment IDs (claude: a new Agent call; cursor: `--resume` the saved session — see *Engine dispatch (fix round)* after the template). It works in the **same `$WORKTREE` / `$BRANCH`** and **replies on each comment thread** (`gh api …/replies` / `glab api …/discussions/{id}/notes`). Then re-run this phase, `round += 1`.
 - **No cap.** Repeat until approved. Do not escalate to the user; do not give up on ordinary findings.
 
 ### Subagent fix prompt (template)
@@ -93,6 +125,15 @@ Do this:
    resolved: <finding → what changed>
    open:     <anything you intentionally did not change, with why>
 ```
+
+**Engine dispatch (fix round).** Same engines as Phase 3's **Implementer engines**, but resuming context:
+- `claude`: a fresh Agent call (`general-purpose`), prompt = the fix prompt above. (Pass the build summary in the prompt — a new subagent has no memory of the build.)
+- `cursor`: re-invoke the saved session so it keeps full build context —
+  ```
+  cursor-agent -p --force --trust --workspace "$WORKTREE" --resume "$SID" \
+    --output-format json "$FIX_PROMPT"
+  ```
+  `--resume "$SID"` continues the build session captured in state (`--continue` resumes the most recent if the id is lost); add `--model "$MODEL"` if set. Same success gate (exit 0 + `.is_error == false`) and timeout wrapper as the build invocation. For cursor, the per-thread replies (step 3) are ordinary `gh`/`glab` shell commands it runs under `--force`.
 
 ## Phase 5 — RECAP
 
@@ -125,5 +166,8 @@ Print, in this order:
 - **Worktree script fails:** hard blocker — do not fall back to working on the base branch.
 - **Trivial / one-liner work:** still run the full chain (issue + subagent PR/MR + review) — do NOT ask the user to skip it. The two-checkpoint contract and the PR/issue link must survive even for small changes.
 - **Subagent can't get a check to green:** it reports `open:` with the reason; you re-spawn with tightened guidance. A failed check is never on its own a hard blocker — the loop has no cap. Only a genuinely unrecoverable failure stops the run, and a red check NEVER reaches the merge gate (Phase 5/6 keep looping).
+- **`cursor-agent` missing or unauthed (engine=cursor):** hard blocker at Phase 0 preflight — surface the install (`curl https://cursor.com/install -fsS | bash`) or auth (`export CURSOR_API_KEY=…` / `cursor-agent login`) hint and stop. Do NOT silently fall back to the claude engine — the user chose cursor.
+- **`cursor-agent` run hangs or times out:** the timeout wrapper kills it; treat that round as failed and re-run (same as a failed check — no cap). Only a run that hangs on *every* retry, or exits non-zero with an unrecoverable error, stops the run.
+- **Invalid cursor model:** `cursor-agent` exits non-zero. Leave `implementer.model` blank to use the CLI's default (omit `--model`), or run `cursor-agent --list-models` to find a valid name.
 - **User interrupts mid-run:** keep the state block current so the run resumes from the last completed phase; the worktree persists.
 - **Multiple issues from Phase 2:** worktree, branch, PR/MR, and `round` are **per issue**; reset `round` to 0 and create a fresh worktree when you start a new slice.
