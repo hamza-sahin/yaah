@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1280, height=640" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+
+      @font-face { font-family: 'JetBrains Mono'; font-weight: 400; font-style: normal;
+                   src: url('fonts/JetBrainsMono-400.woff2') format('woff2'); font-display: block; }
+      @font-face { font-family: 'JetBrains Mono'; font-weight: 500; font-style: normal;
+                   src: url('fonts/JetBrainsMono-500.woff2') format('woff2'); font-display: block; }
+      @font-face { font-family: 'JetBrains Mono'; font-weight: 600; font-style: normal;
+                   src: url('fonts/JetBrainsMono-600.woff2') format('woff2'); font-display: block; }
+      @font-face { font-family: 'JetBrains Mono'; font-weight: 700; font-style: normal;
+                   src: url('fonts/JetBrainsMono-700.woff2') format('woff2'); font-display: block; }
+      @font-face { font-family: 'JetBrains Mono'; font-weight: 800; font-style: normal;
+                   src: url('fonts/JetBrainsMono-800.woff2') format('woff2'); font-display: block; }
+
+      :root {
+        --bg:        #060a14;
+        --bg-deep:   #04060d;
+        --panel:     #0c1320;
+        --line:      #1b2740;
+        --line-soft: #141d30;
+
+        --cyan:        #38d4f2;
+        --cyan-bright: #7ee9ff;
+
+        --green:        #3ee08a;
+        --green-bright: #74ffb4;
+        --green-dim:    rgba(62,224,138,0.16);
+
+        --amber:        #f6a93b;
+        --amber-bright: #ffc878;
+
+        --purple:        #a98bff;
+        --purple-bright: #cdb8ff;
+        --purple-dim:    rgba(169,139,255,0.16);
+
+        --red:    #ff5d6c;
+        --white:  #e9f1fb;
+        --muted:  #8696b0;
+        --muted-2:#7c8ba4;
+      }
+
+      html, body {
+        width: 1280px; height: 640px; overflow: hidden;
+        background: var(--bg-deep);
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        -webkit-font-smoothing: antialiased;
+      }
+      #root { position: relative; width: 1280px; height: 640px; }
+
+      /* ---------- ambient background ---------- */
+      .bg-base { position: absolute; inset: 0; z-index: 0;
+        background: radial-gradient(120% 90% at 50% 18%, #0a1224 0%, var(--bg) 46%, var(--bg-deep) 100%); }
+      .bg-dots { position: absolute; inset: 0; z-index: 1;
+        background-image: radial-gradient(rgba(120,160,220,0.10) 1px, transparent 1.4px);
+        background-size: 26px 26px;
+        -webkit-mask-image: radial-gradient(110% 80% at 50% 40%, #000 55%, transparent 100%);
+        mask-image: radial-gradient(110% 80% at 50% 40%, #000 55%, transparent 100%); }
+      .glow { position: absolute; z-index: 1; border-radius: 50%; filter: blur(60px); opacity: 0.5; pointer-events: none; }
+      .glow.g-cyan  { width: 620px; height: 420px; left: 360px; top: 120px;
+                      background: radial-gradient(circle, rgba(56,212,242,0.22), transparent 70%); }
+      .glow.g-purple{ width: 520px; height: 360px; left: 760px; top: 220px;
+                      background: radial-gradient(circle, rgba(169,139,255,0.16), transparent 70%); }
+
+      .persp { position: absolute; inset: 0; z-index: 2; opacity: 0; perspective: 520px;
+               perspective-origin: 50% 42%; pointer-events: none; overflow: hidden; }
+      .persp-floor { position: absolute; left: -40%; right: -40%; bottom: -22%; height: 78%;
+        transform: rotateX(70deg);
+        background-image:
+          linear-gradient(rgba(120,180,240,0.30) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(120,180,240,0.30) 1px, transparent 1px);
+        background-size: 64px 64px;
+        -webkit-mask-image: linear-gradient(to top, #000 4%, transparent 72%);
+        mask-image: linear-gradient(to top, #000 4%, transparent 72%); }
+
+      .stage { position: absolute; inset: 0; z-index: 10; }
+
+      /* ===== Terminal ===== */
+      #terminal { position: absolute; left: 260px; top: 232px; width: 760px; height: 280px; z-index: 20;
+        background: linear-gradient(180deg, #0b1322, #080e1a); border: 1px solid var(--line); border-radius: 14px;
+        box-shadow: 0 30px 80px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.03); }
+      #terminal .titlebar { height: 46px; display: flex; align-items: center; gap: 9px; padding: 0 18px;
+        border-bottom: 1px solid var(--line-soft); }
+      .dot { width: 13px; height: 13px; border-radius: 50%; }
+      .dot.r { background: #ff5f56; } .dot.y { background: #febc2e; } .dot.g { background: #27c93f; }
+      #terminal .title { flex: 1; text-align: center; font-size: 16px; color: var(--muted-2); letter-spacing: 1px; margin-right: 40px; }
+      #terminal .title b { color: var(--muted); font-weight: 500; }
+      #terminal .body { padding: 30px 26px; font-size: 27px; line-height: 1.4; }
+      .term-line { display: flex; align-items: center; white-space: nowrap; }
+      .term-prompt { color: var(--cyan); margin-right: 12px; display: inline-flex; }
+      .reveal { display: inline-block; overflow: hidden; width: 0; vertical-align: bottom; }
+      .reveal code { display: inline-block; font-family: 'JetBrains Mono', ui-monospace, monospace; white-space: nowrap; }
+      .tok-cmd { color: var(--cyan); font-weight: 600; }
+      .tok-arg { color: var(--white); }
+      .caret { display: inline-block; width: 13px; height: 28px; background: var(--cyan); margin-left: 4px;
+               vertical-align: -4px; border-radius: 1px; }
+      .blink-wrap { display: inline-flex; }
+
+      /* ===== Prompt card ===== */
+      #prompt-card { position: absolute; left: 500px; top: 250px; width: 280px; z-index: 24; opacity: 0;
+        background: linear-gradient(180deg, #0c1626, #0a1120); border: 1.5px solid var(--cyan); border-radius: 14px;
+        padding: 20px 22px; box-shadow: 0 0 0 1px rgba(56,212,242,0.25), 0 0 38px rgba(56,212,242,0.35); }
+      #prompt-card .pc-icon { color: var(--cyan); display: flex; align-items: center; gap: 4px; margin-bottom: 12px; }
+      #prompt-card .pc-text { color: var(--white); font-size: 24px; line-height: 1.35; font-weight: 500; }
+      .streaks { position: absolute; left: 250px; top: 250px; z-index: 22; opacity: 0; }
+      .arrow-r { position: absolute; left: 800px; top: 296px; z-index: 23; opacity: 0; color: var(--cyan); }
+
+      /* ===== Pipeline rail ===== */
+      #rail { position: absolute; left: 0; right: 0; top: 548px; height: 70px; z-index: 15; opacity: 0; }
+      #rail .track { position: absolute; left: 120px; right: 120px; top: 11px; height: 3px; background: var(--line); border-radius: 2px; }
+      #rail .track-fill { position: absolute; left: 120px; top: 11px; height: 3px; width: 1040px; transform: scaleX(0);
+        transform-origin: left center; border-radius: 2px; background: linear-gradient(90deg, var(--cyan), var(--cyan-bright));
+        box-shadow: 0 0 12px rgba(56,212,242,0.6); }
+      .node { position: absolute; top: 0; transform: translateX(-50%); text-align: center; width: 120px; }
+      .node .pip { width: 22px; height: 22px; border-radius: 50%; margin: 1px auto 0; border: 2px dashed var(--muted-2);
+        background: var(--bg); display: flex; align-items: center; justify-content: center; position: relative; }
+      .node .pip svg { width: 13px; height: 13px; opacity: 0; }
+      .node .lbl { margin-top: 10px; font-size: 15px; letter-spacing: 0.5px; color: var(--muted-2); white-space: nowrap; }
+      .node .ring-glow { position: absolute; inset: -7px; border-radius: 50%; opacity: 0;
+        box-shadow: 0 0 0 2px currentColor, 0 0 16px 1px currentColor; }
+
+      /* ===== Detail cards ===== */
+      .card { position: absolute; left: 50%; top: 138px; z-index: 21; opacity: 0; will-change: transform, opacity; }
+      .panel { background: linear-gradient(180deg, #0c1424, #0a1019); border: 1.5px solid var(--line); border-radius: 16px;
+        padding: 22px 26px; box-shadow: 0 24px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.03); }
+      .card-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+      .card-head .ttl { font-size: 22px; font-weight: 700; letter-spacing: 1.5px; }
+      .ico { width: 30px; height: 30px; flex: none; }
+      .row { display: flex; align-items: center; gap: 11px; font-size: 19px; line-height: 1.85; color: var(--white); }
+      .row .mk { width: 20px; height: 20px; flex: none; display: inline-flex; }
+      .dot-pip { width: 9px; height: 9px; border-radius: 50%; background: var(--cyan); flex: none; margin: 0 5px; }
+      .pill { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; padding: 5px 12px; border-radius: 8px;
+        border: 1px solid; font-weight: 600; letter-spacing: 0.4px; }
+      .btn { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; padding: 8px 18px;
+        border-radius: 9px; border: 1.5px solid; letter-spacing: 0.5px; }
+
+      #card-grill .panel { width: 470px; }
+      #card-grill .ttl { color: var(--cyan); }
+      #card-grill .checks { display: flex; flex-direction: column; gap: 2px; }
+      #card-grill .foot { display: flex; align-items: center; gap: 10px; margin-top: 14px; color: var(--muted); font-size: 17px; }
+      #card-grill .locked-badge { position: absolute; right: 26px; top: 24px; opacity: 0; display: flex; align-items: center;
+        gap: 8px; color: var(--green); font-size: 15px; font-weight: 700; }
+
+      #card-issue .panel { width: 430px; }
+      #card-issue .ttl { color: var(--cyan); }
+      #card-issue .issnum { font-size: 17px; color: var(--cyan-bright); margin-bottom: 2px; letter-spacing: 0.5px; }
+      #card-issue .isstitle { font-size: 24px; color: var(--white); font-weight: 600; margin-bottom: 16px; }
+      #card-issue .pills { display: flex; gap: 12px; }
+
+      #card-build .panel { width: 400px; }
+      #card-build .ttl { color: var(--cyan); }
+      #card-build .tlabel { font-size: 16px; color: var(--muted); margin-bottom: 8px; letter-spacing: 1px; }
+      #card-build .trow { display: flex; align-items: center; gap: 12px; font-size: 20px; }
+      #card-build .trow .tnum { color: var(--red); width: 96px; }
+      #card-build .allpass { display: flex; align-items: center; gap: 12px; margin-top: 12px; font-size: 21px;
+        font-weight: 700; color: var(--green); opacity: 0; }
+
+      #card-pr { z-index: 26; top: 150px; }
+      #card-pr .panel { width: 364px; border-color: rgba(169,139,255,0.5);
+        box-shadow: 0 0 30px rgba(169,139,255,0.28), 0 24px 60px rgba(0,0,0,0.5); }
+      #card-pr .ttl { color: var(--purple); }
+      #card-pr .prnum { display: flex; align-items: center; gap: 10px; font-size: 21px; color: var(--purple-bright); font-weight: 700; }
+      #card-pr .prtitle { font-size: 19px; color: var(--white); margin: 4px 0 14px; }
+      #card-pr .pr-checks { display: flex; flex-direction: column; gap: 4px; }
+      #card-pr .pr-body { position: relative; min-height: 128px; }
+      #card-pr .pr-chk { font-size: 17px; line-height: 1.5; }
+      #card-pr .pr-review { position: absolute; inset: 0; }
+      #card-pr .rv-grp { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 11px; opacity: 0; }
+
+      #review-loop { position: absolute; left: 50%; top: 30px; width: 500px; height: 500px; z-index: 25; opacity: 0; pointer-events: none; }
+      #review-loop .ring-svg { position: absolute; inset: 0; }
+      #review-loop .rl-top, #review-loop .rl-bot { position: absolute; left: 50%; transform: translateX(-50%);
+        text-align: center; font-size: 17px; font-weight: 700; letter-spacing: 3px; color: var(--purple);
+        white-space: nowrap; background: rgba(6,10,20,0.94); padding: 3px 18px; border-radius: 20px; }
+      #review-loop .rl-top { top: -14px; } #review-loop .rl-bot { bottom: -14px; }
+      .reviewers { position: absolute; top: 250px; z-index: 27; opacity: 0; }
+      #bubble { left: 250px; } #avatars { right: 250px; }
+
+      #card-rebase .panel { width: 520px; }
+      #card-rebase .ttl { color: var(--cyan); font-size: 19px; }
+      #card-rebase .git-wrap { position: relative; height: 180px; margin-top: 6px; }
+      #card-rebase .branch-lbl { position: absolute; font-size: 16px; font-weight: 600; }
+
+      #card-merge .panel { width: 430px; position: relative; }
+      #card-merge .ttl { color: var(--green); }
+      #card-merge .mg-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 16px; }
+      #card-merge .merged-badge { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 10px; opacity: 0; background: linear-gradient(180deg, #0a1c14, #08130e);
+        border-radius: 16px; border: 1.5px solid var(--green); box-shadow: 0 0 40px rgba(62,224,138,0.35); }
+      #card-merge .merged-badge .mtxt { font-size: 30px; font-weight: 800; letter-spacing: 3px; color: var(--green-bright); }
+      .confetti { position: absolute; width: 9px; height: 9px; border-radius: 2px; opacity: 0; }
+
+      /* ===== Final title ===== */
+      #final { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 4px; opacity: 0; }
+      #final .brand { display: flex; align-items: baseline; font-size: 134px; font-weight: 800; letter-spacing: 2px; line-height: 1; }
+      #final .brand .word { color: var(--white); }
+      #final .brand .cur { color: var(--cyan); margin-left: 8px; font-weight: 700; }
+      #final .sub { font-size: 30px; color: var(--cyan-bright); letter-spacing: 5px; margin-top: 18px; font-weight: 500; }
+      #final .tag { font-size: 23px; letter-spacing: 1px; margin-top: 16px; display: flex; gap: 12px; align-items: center; }
+      #final .tag .a { color: var(--cyan); } #final .tag .b { color: var(--purple-bright); }
+      #final .tag .c { color: var(--green-bright); } #final .tag .ar { color: var(--muted); display: inline-flex; }
+      #final .wt { display: flex; align-items: center; gap: 10px; margin-top: 22px; font-size: 18px; color: var(--muted); letter-spacing: 1px; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="16" data-width="1280" data-height="640">
+
+      <div class="bg-base"></div>
+      <div class="bg-dots"></div>
+      <div class="glow g-cyan"></div>
+      <div class="glow g-purple"></div>
+      <div class="persp"><div class="persp-floor" data-layout-ignore></div></div>
+
+      <div class="stage">
+
+        <!-- ===== Terminal ===== -->
+        <div id="terminal">
+          <div class="titlebar">
+            <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+            <span class="title">yaah <b>/forge</b></span>
+          </div>
+          <div class="body">
+            <div class="term-line">
+              <span class="term-prompt">
+                <svg width="16" height="26" viewBox="0 0 16 26" fill="none"><path d="M2 4 L11 13 L2 22" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              <span class="reveal"><code><span class="tok-cmd">/forge</span><span class="tok-arg">&nbsp;add a dark-mode toggle</span></code></span>
+              <span class="blink-wrap"><span class="caret blink"></span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== Prompt card ===== -->
+        <svg class="streaks" width="240" height="120" viewBox="0 0 240 120">
+          <g stroke="#38d4f2" stroke-width="2" stroke-linecap="round">
+            <line class="sk" x1="0" y1="24" x2="120" y2="24"/>
+            <line class="sk" x1="0" y1="48" x2="160" y2="48"/>
+            <line class="sk" x1="0" y1="72" x2="135" y2="72"/>
+            <line class="sk" x1="0" y1="96" x2="100" y2="96"/>
+          </g>
+        </svg>
+        <div id="prompt-card">
+          <div class="pc-icon">
+            <svg width="18" height="24" viewBox="0 0 18 24" fill="none"><path d="M2 4 L11 12 L2 20" stroke="#38d4f2" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span style="font-size:22px; color:#38d4f2">_</span>
+          </div>
+          <div class="pc-text">add a dark-mode toggle</div>
+        </div>
+        <div class="arrow-r">
+          <svg width="56" height="34" viewBox="0 0 56 34"><path d="M2 17 H46 M34 6 L48 17 L34 28" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <!-- ===== Pipeline rail ===== -->
+        <div id="rail">
+          <div class="track"></div>
+          <div class="track-fill"></div>
+          <div class="node" id="n0" style="left:120px; color:#38d4f2">
+            <div class="pip"><svg viewBox="0 0 24 24"><path d="M4 12 L10 18 L20 6" stroke="#3ee08a" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="ring-glow"></div></div>
+            <div class="lbl">GRILL</div>
+          </div>
+          <div class="node" id="n1" style="left:293px; color:#38d4f2">
+            <div class="pip"><svg viewBox="0 0 24 24"><path d="M4 12 L10 18 L20 6" stroke="#3ee08a" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="ring-glow"></div></div>
+            <div class="lbl">ISSUE</div>
+          </div>
+          <div class="node" id="n2" style="left:467px; color:#38d4f2">
+            <div class="pip"><svg viewBox="0 0 24 24"><path d="M4 12 L10 18 L20 6" stroke="#3ee08a" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="ring-glow"></div></div>
+            <div class="lbl">BUILD</div>
+          </div>
+          <div class="node" id="n3" style="left:640px; color:#a98bff">
+            <div class="pip"><svg viewBox="0 0 24 24"><path d="M4 12 L10 18 L20 6" stroke="#3ee08a" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="ring-glow"></div></div>
+            <div class="lbl">PR/MR</div>
+          </div>
+          <div class="node" id="n4" style="left:813px; color:#f6a93b">
+            <div class="pip"><svg viewBox="0 0 24 24"><path d="M4 12 L10 18 L20 6" stroke="#3ee08a" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="ring-glow"></div></div>
+            <div class="lbl">REVIEW</div>
+          </div>
+          <div class="node" id="n5" style="left:987px; color:#38d4f2">
+            <div class="pip"><svg viewBox="0 0 24 24"><path d="M4 12 L10 18 L20 6" stroke="#3ee08a" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="ring-glow"></div></div>
+            <div class="lbl">REBASE</div>
+          </div>
+          <div class="node" id="n6" style="left:1160px; color:#3ee08a">
+            <div class="pip"><svg viewBox="0 0 24 24"><path d="M4 12 L10 18 L20 6" stroke="#3ee08a" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="ring-glow"></div></div>
+            <div class="lbl">MERGE</div>
+          </div>
+        </div>
+
+        <!-- ===== GRILL card ===== -->
+        <div class="card" id="card-grill">
+          <div class="panel" style="position:relative">
+            <div class="card-head">
+              <svg class="ico" viewBox="0 0 32 32" fill="none">
+                <rect x="5" y="3" width="16" height="22" rx="2.5" stroke="#38d4f2" stroke-width="2"/>
+                <line x1="9" y1="9" x2="17" y2="9" stroke="#38d4f2" stroke-width="1.8"/>
+                <line x1="9" y1="13" x2="17" y2="13" stroke="#38d4f2" stroke-width="1.8"/>
+                <circle cx="20" cy="21" r="6" stroke="#7ee9ff" stroke-width="2.2"/>
+                <line x1="24.5" y1="25.5" x2="29" y2="30" stroke="#7ee9ff" stroke-width="2.6" stroke-linecap="round"/>
+              </svg>
+              <span class="ttl">GRILL</span>
+            </div>
+            <div class="checks">
+              <div class="row gr-row"><span class="dot-pip"></span>Clarify intent</div>
+              <div class="row gr-row"><span class="dot-pip"></span>Edge cases</div>
+              <div class="row gr-row"><span class="dot-pip"></span>Constraints</div>
+              <div class="row gr-row"><span class="dot-pip"></span>Acceptance</div>
+            </div>
+            <div class="foot">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#74849c" stroke-width="2"/><path d="M8 11 V8 a4 4 0 0 1 8 0 v3" stroke="#74849c" stroke-width="2"/></svg>
+              Lock requirements
+            </div>
+            <div class="locked-badge">
+              <svg width="16" height="16" viewBox="0 0 24 24"><path d="M4 12 L10 18 L20 6" stroke="#3ee08a" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              requirements locked
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== ISSUE card ===== -->
+        <div class="card" id="card-issue">
+          <div class="panel">
+            <div class="card-head">
+              <svg class="ico" viewBox="0 0 32 32" fill="none">
+                <path d="M4 9 a2 2 0 0 1 2-2 h20 a2 2 0 0 1 2 2 v3 a2 2 0 0 0 0 4 v3 a2 2 0 0 1-2 2 H6 a2 2 0 0 1-2-2 v-3 a2 2 0 0 0 0-4 z" stroke="#38d4f2" stroke-width="2"/>
+                <line x1="10" y1="11" x2="10" y2="21" stroke="#38d4f2" stroke-width="1.6" stroke-dasharray="2 2"/>
+              </svg>
+              <span class="ttl">ISSUE</span>
+            </div>
+            <div class="issnum">Issue #124</div>
+            <div class="isstitle">Add dark-mode toggle</div>
+            <div class="pills">
+              <span class="pill" style="color:#cdb8ff; border-color:rgba(169,139,255,0.45); background:rgba(169,139,255,0.16)">type: feature</span>
+              <span class="pill" style="color:#ffc878; border-color:rgba(246,169,59,0.4); background:rgba(246,169,59,0.12)">priority: medium</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== BUILD / TDD card ===== -->
+        <div class="card" id="card-build">
+          <div class="panel">
+            <div class="card-head">
+              <svg class="ico" viewBox="0 0 32 32" fill="none">
+                <path d="M13 4 v8 L7 24 a2 2 0 0 0 2 3 h14 a2 2 0 0 0 2-3 l-6-12 V4" stroke="#38d4f2" stroke-width="2" stroke-linejoin="round"/>
+                <line x1="11" y1="4" x2="21" y2="4" stroke="#38d4f2" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <span class="ttl">BUILD / TDD</span>
+            </div>
+            <div class="tlabel">Tests</div>
+            <div class="trow t-fail" id="tr1"><span class="tnum">1 FAIL</span><span class="mk x"></span></div>
+            <div class="trow t-fail" id="tr2"><span class="tnum">2 FAIL</span><span class="mk x"></span></div>
+            <div class="trow t-fail" id="tr3"><span class="tnum">3 FAIL</span><span class="mk x"></span></div>
+            <div class="allpass">
+              <svg width="22" height="22" viewBox="0 0 24 24"><path d="M4 12 L10 18 L20 6" stroke="#3ee08a" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              All tests PASS
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== PR / MR card ===== -->
+        <div class="card" id="card-pr">
+          <div class="panel">
+            <div class="card-head"><span class="ttl">PR / MR</span></div>
+            <div class="prnum">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <circle cx="6" cy="6" r="2.5" stroke="#a98bff" stroke-width="2"/>
+                <circle cx="6" cy="18" r="2.5" stroke="#a98bff" stroke-width="2"/>
+                <circle cx="18" cy="6" r="2.5" stroke="#a98bff" stroke-width="2"/>
+                <path d="M6 8.5 v7 M6 8 a6 6 0 0 0 6 6 h.5 M18 8.5 v3 a4 4 0 0 1-4 4 h-2" stroke="#a98bff" stroke-width="2" fill="none"/>
+              </svg>
+              PR #124
+            </div>
+            <div class="prtitle">Add dark-mode toggle</div>
+            <div class="pr-body">
+              <div class="pr-checks">
+                <div class="row pr-chk"><span class="mk ck"></span>Tests passing</div>
+                <div class="row pr-chk"><span class="mk ck"></span>Lint passing</div>
+                <div class="row pr-chk"><span class="mk ck"></span>Docs updated</div>
+                <div style="margin-top:10px"><span class="btn" id="open-pr" style="color:#cdb8ff; border-color:#a98bff">Open PR</span></div>
+              </div>
+              <div class="pr-review">
+                <div class="rv-grp" id="rv-amber-grp">
+                  <span class="pill" style="color:#ffc878; border-color:#f6a93b; background:rgba(246,169,59,0.12); width:max-content">Changes requested</span>
+                  <div class="row" style="color:#f6a93b; font-size:17px">
+                    <svg class="spin" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M20 12 a8 8 0 1 1-2.3-5.6" stroke="#f6a93b" stroke-width="2.4" stroke-linecap="round"/><path d="M18 3 v4 h-4" stroke="#f6a93b" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Address feedback
+                  </div>
+                </div>
+                <div class="rv-grp" id="rv-green-grp">
+                  <span class="pill" style="color:#74ffb4; border-color:#3ee08a; background:rgba(62,224,138,0.16); width:max-content"><span class="mk ck" style="width:16px;height:16px"></span>Clean</span>
+                  <div class="row" style="color:#3ee08a; font-size:17px">All checks passed</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== Review loop ring ===== -->
+        <div id="review-loop">
+          <div class="rl-top">REVIEW LOOP</div>
+          <div class="rl-bot">STRICT REVIEW</div>
+          <svg class="ring-svg" data-layout-allow-overflow viewBox="0 0 500 500" fill="none">
+            <defs>
+              <marker id="arw" markerWidth="9" markerHeight="9" refX="4.5" refY="4.5" orient="auto">
+                <path d="M1 1 L7.5 4.5 L1 8" stroke="currentColor" stroke-width="1.6" fill="none"/>
+              </marker>
+            </defs>
+            <circle id="rl-circle" cx="250" cy="250" r="244" stroke="#a98bff" stroke-width="3" stroke-dasharray="600 933"
+                    stroke-linecap="round" marker-end="url(#arw)" transform="rotate(15 250 250)" color="#a98bff"/>
+            <circle id="rl-circle2" cx="250" cy="250" r="244" stroke="#a98bff" stroke-width="3" stroke-dasharray="600 933"
+                    stroke-linecap="round" marker-end="url(#arw)" transform="rotate(195 250 250)" color="#a98bff"/>
+          </svg>
+        </div>
+        <div class="reviewers" id="bubble">
+          <svg width="46" height="46" viewBox="0 0 46 46" fill="none">
+            <path d="M6 8 h34 a3 3 0 0 1 3 3 v18 a3 3 0 0 1-3 3 H18 l-8 7 v-7 H6 a3 3 0 0 1-3-3 V11 a3 3 0 0 1 3-3z" stroke="#a98bff" stroke-width="2"/>
+            <line x1="11" y1="16" x2="35" y2="16" stroke="#a98bff" stroke-width="2"/>
+            <line x1="11" y1="22" x2="29" y2="22" stroke="#a98bff" stroke-width="2"/>
+          </svg>
+        </div>
+        <div class="reviewers" id="avatars">
+          <svg width="50" height="46" viewBox="0 0 50 46" fill="none">
+            <circle cx="13" cy="13" r="7" stroke="#a98bff" stroke-width="2"/>
+            <path d="M2 33 a11 11 0 0 1 22 0" stroke="#a98bff" stroke-width="2"/>
+            <circle cx="34" cy="15" r="6" stroke="#cdb8ff" stroke-width="2"/>
+            <path d="M25 33 a9 9 0 0 1 18 0" stroke="#cdb8ff" stroke-width="2"/>
+          </svg>
+        </div>
+
+        <!-- ===== Rebase / Git diagram ===== -->
+        <div class="card" id="card-rebase">
+          <div class="panel">
+            <div class="card-head"><span class="ttl">REBASE ON LATEST MAIN</span></div>
+            <div class="git-wrap">
+              <div class="branch-lbl" style="left:0; top:32px; color:#38d4f2">main</div>
+              <div class="branch-lbl" style="left:0; top:118px; color:#a98bff">feature /124</div>
+              <div class="branch-lbl" id="latest-lbl" style="right:4px; top:8px; color:#7ee9ff; opacity:0">latest</div>
+              <svg width="468" height="180" viewBox="0 0 468 180" fill="none" style="position:absolute; left:0; top:0">
+                <line x1="96" y1="46" x2="430" y2="46" stroke="#38d4f2" stroke-width="2.5" stroke-dasharray="334" stroke-dashoffset="334" id="main-line"/>
+                <circle class="cm c-main" cx="120" cy="46" r="8" fill="#0a1019" stroke="#38d4f2" stroke-width="2.5"/>
+                <circle class="cm c-main" cx="210" cy="46" r="8" fill="#0a1019" stroke="#38d4f2" stroke-width="2.5"/>
+                <circle class="cm c-main" cx="300" cy="46" r="8" fill="#0a1019" stroke="#38d4f2" stroke-width="2.5"/>
+                <circle class="cm c-tip" cx="396" cy="46" r="9" fill="#38d4f2" stroke="#7ee9ff" stroke-width="2.5"/>
+                <line x1="120" y1="132" x2="240" y2="132" stroke="#a98bff" stroke-width="2.5" opacity="0.32"/>
+                <circle cx="120" cy="132" r="8" fill="#0a1019" stroke="#a98bff" stroke-width="2.5" opacity="0.32"/>
+                <circle cx="195" cy="132" r="8" fill="#0a1019" stroke="#a98bff" stroke-width="2.5" opacity="0.32"/>
+                <circle cx="240" cy="132" r="8" fill="#0a1019" stroke="#a98bff" stroke-width="2.5" opacity="0.32"/>
+                <path id="rebase-arc" d="M240 132 C 330 132, 360 78, 396 46" stroke="#cdb8ff" stroke-width="2.6" stroke-dasharray="170" stroke-dashoffset="170" fill="none"/>
+                <circle class="cm-new" cx="430" cy="46" r="8" fill="#0a1019" stroke="#cdb8ff" stroke-width="2.5" opacity="0"/>
+              </svg>
+              <div class="branch-lbl" id="rebased-pill" style="left:50%; transform:translateX(-50%); top:154px; opacity:0">
+                <span class="pill" style="color:#74ffb4; border-color:#3ee08a; background:rgba(62,224,138,0.16)"><span class="mk ck" style="width:15px;height:15px"></span>Rebased</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== Merge gate ===== -->
+        <div class="card" id="card-merge">
+          <div class="panel">
+            <div class="card-head">
+              <svg class="ico" viewBox="0 0 32 32" fill="none">
+                <circle cx="8" cy="7" r="3" stroke="#3ee08a" stroke-width="2"/>
+                <circle cx="8" cy="25" r="3" stroke="#3ee08a" stroke-width="2"/>
+                <circle cx="24" cy="16" r="3" stroke="#3ee08a" stroke-width="2"/>
+                <path d="M8 10 v12 M8 13 a8 8 0 0 0 8 8 h2 a4 4 0 0 0 3-2" stroke="#3ee08a" stroke-width="2" fill="none"/>
+              </svg>
+              <span class="ttl">MERGE GATE</span>
+            </div>
+            <div class="mg-list">
+              <div class="row mg-row"><span class="mk ck"></span>Rebased</div>
+              <div class="row mg-row"><span class="mk ck"></span>All checks green</div>
+              <div class="row mg-row"><span class="mk ck"></span>Reviews clean</div>
+            </div>
+            <span class="btn" id="merge-btn" style="color:#74ffb4; border-color:#3ee08a">Merge&nbsp;&nbsp;<svg width="20" height="14" viewBox="0 0 24 16" style="vertical-align:middle"><path d="M2 8 H18 M13 2 L20 8 L13 14" stroke="#74ffb4" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <div class="merged-badge">
+              <svg width="44" height="44" viewBox="0 0 32 32" fill="none">
+                <circle cx="8" cy="7" r="3" stroke="#74ffb4" stroke-width="2"/>
+                <circle cx="8" cy="25" r="3" stroke="#74ffb4" stroke-width="2"/>
+                <circle cx="24" cy="16" r="3" stroke="#74ffb4" stroke-width="2"/>
+                <path d="M8 10 v12 M8 13 a8 8 0 0 0 8 8 h2 a4 4 0 0 0 3-2" stroke="#74ffb4" stroke-width="2" fill="none"/>
+              </svg>
+              <span class="mtxt">Merged!</span>
+              <div style="position:absolute; inset:0; overflow:hidden; border-radius:16px">
+                <span class="confetti" style="left:60px;  top:30px; background:#38d4f2"></span>
+                <span class="confetti" style="left:120px; top:20px; background:#a98bff"></span>
+                <span class="confetti" style="left:200px; top:26px; background:#74ffb4"></span>
+                <span class="confetti" style="left:300px; top:22px; background:#f6a93b"></span>
+                <span class="confetti" style="left:360px; top:32px; background:#7ee9ff"></span>
+                <span class="confetti" style="left:160px; top:18px; background:#3ee08a"></span>
+                <span class="confetti" style="left:260px; top:28px; background:#cdb8ff"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== Final title lockup ===== -->
+        <div id="final">
+          <div class="brand"><span class="word">yaah</span><span class="cur blink">_</span></div>
+          <div class="sub">Yet Another Agent Harness</div>
+          <div class="tag">
+            <span class="a">One prompt</span>
+            <span class="ar"><svg width="34" height="14" viewBox="0 0 38 16"><path d="M2 8 H30 M25 2 L34 8 L25 14" stroke="#74849c" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span class="b">reviewed PR/MR</span>
+            <span class="ar"><svg width="34" height="14" viewBox="0 0 38 16"><path d="M2 8 H30 M25 2 L34 8 L25 14" stroke="#74849c" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span class="c">merge-ready</span>
+          </div>
+          <div class="wt">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M3 7 a2 2 0 0 1 2-2 h4 l2 2 h8 a2 2 0 0 1 2 2 v8 a2 2 0 0 1-2 2 H5 a2 2 0 0 1-2-2 z" stroke="#74849c" stroke-width="1.8"/>
+              <line x1="14" y1="11" x2="14" y2="19" stroke="#74849c" stroke-width="1.6"/>
+              <circle cx="14" cy="11" r="1.6" fill="#74849c"/>
+            </svg>
+            isolated worktrees
+          </div>
+        </div>
+
+      </div><!-- /stage -->
+
+      <script>
+        // inject check / x glyphs as SVG so rows stay crisp & font-independent
+        var CK = '<svg width="20" height="20" viewBox="0 0 24 24"><path d="M4 12 L10 18 L20 6" stroke="#3ee08a" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        var XK = '<svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 6 L18 18 M18 6 L6 18" stroke="#ff5d6c" stroke-width="3" fill="none" stroke-linecap="round"/></svg>';
+        var i, ckEls = document.querySelectorAll('.mk.ck'), xEls = document.querySelectorAll('.mk.x');
+        for (i = 0; i < ckEls.length; i++) ckEls[i].innerHTML = CK;
+        for (i = 0; i < xEls.length; i++) xEls[i].innerHTML = XK;
+      </script>
+
+      <script>
+        window.__timelines = window.__timelines || {};
+        const tl = gsap.timeline({ paused: true });
+        const E_OUT = "power3.out", E_OUT4 = "power4.out", E_EXPO = "expo.out", E_IN = "power2.in";
+
+        /* time proxy: scale every scheduled position + duration so the pipeline plays a touch slower */
+        const SP = 1.18, SD = 1.18;
+        const sp = (p) => (typeof p === "number" ? p * SP : p);
+        const sd = (v) => { if (v && typeof v === "object") { if (typeof v.duration === "number") v.duration *= SD; if (typeof v.stagger === "number") v.stagger *= SD; } return v; };
+        const T = {
+          to: (s, v, p) => tl.to(s, sd(v), sp(p)),
+          fromTo: (s, a, b, p) => tl.fromTo(s, a, sd(b), sp(p)),
+          set: (s, v, p) => tl.set(s, v, sp(p)),
+          call: (fn, a, p) => tl.call(fn, a, sp(p)),
+        };
+
+        /* global blink: shared phase (period 1.0s) so the loop seam matches (16s = 16 periods) */
+        tl.fromTo(".blink", { opacity: 1 }, { opacity: 0.05, duration: 0.5, repeat: 31, yoyo: true, ease: "steps(1)" }, 0);
+
+        /* ambient glow breathing (spans full duration; returns to start for the loop) */
+        tl.to(".g-cyan",   { scale: 1.08, duration: 8, repeat: 1, yoyo: true, ease: "sine.inOut", transformOrigin: "center" }, 0);
+        tl.to(".g-purple", { scale: 1.10, duration: 8, repeat: 1, yoyo: true, ease: "sine.inOut", transformOrigin: "center" }, 0);
+
+        /* ===== SCENE 1 — terminal types ===== */
+        const revealEl = document.querySelector(".reveal");
+        const revealCode = document.querySelector(".reveal code");
+        const W = revealCode ? Math.ceil(revealCode.getBoundingClientRect().width || revealCode.offsetWidth || 380) : 380;
+        T.fromTo(revealEl, { width: 0 }, { width: W, duration: 0.82, ease: "steps(29)" }, 0.28);
+
+        /* ===== SCENE 2 — prompt card detaches ===== */
+        T.to("#terminal", { opacity: 0, scale: 0.9, y: -26, duration: 0.45, ease: E_IN, transformOrigin: "center" }, 1.18);
+        T.fromTo("#prompt-card", { opacity: 0, scale: 0.88, y: 10 }, { opacity: 1, scale: 1, y: 0, duration: 0.4, ease: "back.out(1.5)" }, 1.34);
+        T.fromTo(".streaks", { opacity: 0, x: -30 }, { opacity: 0.9, x: 0, duration: 0.4, ease: E_OUT }, 1.4);
+        T.fromTo(".streaks .sk", { opacity: 0, x: -24 }, { opacity: 0.85, x: 24, duration: 0.5, stagger: 0.05, ease: E_OUT }, 1.5);
+        T.to(".streaks .sk", { opacity: 0, x: 60, duration: 0.4, stagger: 0.04, ease: E_IN, overwrite: "auto" }, 1.92);
+        T.fromTo(".arrow-r", { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.38, ease: E_OUT }, 1.55);
+        T.fromTo("#rail", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.5, ease: E_OUT }, 1.6);
+        T.fromTo(".node", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.35, stagger: 0.04, ease: E_OUT }, 1.7);
+        T.to(".arrow-r", { opacity: 0, x: 24, duration: 0.3, ease: E_IN }, 1.98);
+        T.to("#prompt-card", { x: -470, y: 250, scale: 0.34, opacity: 0, duration: 0.5, ease: "power2.inOut" }, 1.98);
+
+        /* rail node helpers (literal selectors via + concat, no template literals) */
+        const NODE = ["#n0", "#n1", "#n2", "#n3", "#n4", "#n5", "#n6"];
+        const FILL = [0.082, 0.246, 0.41, 0.574, 0.738, 0.902, 1.0];
+        function activate(n, t, col) {
+          T.to(n + " .pip", { borderColor: col, borderTopStyle: "solid", borderRightStyle: "solid",
+                              borderBottomStyle: "solid", borderLeftStyle: "solid", scale: 1.25, duration: 0.3, ease: "back.out(2)" }, t);
+          T.to(n + " .ring-glow", { opacity: 0.9, duration: 0.3 }, t);
+          T.to(n + " .lbl", { color: "#e9f1fb", duration: 0.3 }, t);
+          T.to(n + " .ring-glow", { opacity: 0.35, duration: 0.8, ease: "sine.inOut" }, t + 0.3);
+        }
+        function done(idx, t) {
+          const n = NODE[idx];
+          T.to(n + " .pip", { backgroundColor: "#3ee08a", borderColor: "#3ee08a", scale: 1.0, duration: 0.3, ease: E_OUT }, t);
+          T.set(n + " .pip svg", { opacity: 1 }, t);
+          T.fromTo(n + " .pip svg path", { opacity: 0 }, { opacity: 1, duration: 0.22 }, t + 0.02);
+          T.to(n + " .ring-glow", { opacity: 0.0, duration: 0.4 }, t);
+          T.to(n + " .lbl", { color: "#3ee08a", duration: 0.3 }, t);
+          T.to(".track-fill", { scaleX: FILL[idx], duration: 0.45, ease: E_OUT }, t);
+        }
+        function cardIn(sel, t)  { T.fromTo(sel, { opacity: 0, xPercent: -50, x: 70 }, { opacity: 1, xPercent: -50, x: 0, duration: 0.42, ease: E_OUT4 }, t); }
+        function cardOut(sel, t) { T.to(sel, { opacity: 0, x: -60, duration: 0.34, ease: E_IN }, t); }
+
+        /* ===== SCENE 3 — GRILL ===== */
+        activate("#n0", 2.02, "#38d4f2");
+        cardIn("#card-grill", 2.05);
+        T.fromTo("#card-grill .gr-row", { opacity: 0, x: 14 }, { opacity: 1, x: 0, duration: 0.3, ease: E_OUT }, 2.2);
+        for (let k = 0; k < 4; k++) {
+          const sel = "#card-grill .gr-row:nth-child(" + (k + 1) + ") .dot-pip";
+          const t = 2.34 + k * 0.13;
+          T.to(sel, { backgroundColor: "#3ee08a", scale: 1.5, duration: 0.18, ease: "back.out(3)" }, t);
+          T.to(sel, { scale: 1.0, duration: 0.2 }, t + 0.18);
+        }
+        T.to("#card-grill .panel", { borderColor: "#3ee08a", boxShadow: "0 0 30px rgba(62,224,138,0.3), 0 24px 60px rgba(0,0,0,0.5)", duration: 0.4 }, 2.86);
+        T.to("#card-grill .foot", { opacity: 0, duration: 0.2 }, 2.82);
+        T.fromTo("#card-grill .locked-badge", { opacity: 0, x: 10 }, { opacity: 1, x: 0, duration: 0.3, ease: E_OUT }, 2.86);
+        done(0, 2.9);
+        cardOut("#card-grill", 2.98);
+
+        /* ===== SCENE 4 — ISSUE ===== */
+        activate("#n1", 3.02, "#38d4f2");
+        cardIn("#card-issue", 3.06);
+        T.fromTo("#card-issue .issnum", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.28, ease: E_OUT }, 3.18);
+        T.fromTo("#card-issue .isstitle", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.3, ease: E_OUT }, 3.26);
+        T.fromTo("#card-issue .pill", { opacity: 0, y: 10, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.3, stagger: 0.09, ease: "back.out(2)" }, 3.28);
+        done(1, 3.62);
+        cardOut("#card-issue", 3.78);
+
+        /* ===== SCENE 5 — BUILD / TDD ===== */
+        activate("#n2", 3.82, "#38d4f2");
+        cardIn("#card-build", 3.85);
+        T.fromTo("#card-build .t-fail", { opacity: 0, x: 12 }, { opacity: 1, x: 0, duration: 0.22, stagger: 0.12, ease: E_OUT }, 3.98);
+        T.to("#card-build .t-fail .tnum", { color: "#3ee08a", duration: 0.2, stagger: 0.05 }, 4.34);
+        const TR = ["#tr1", "#tr2", "#tr3"];
+        for (let k = 0; k < 3; k++) {
+          const mk = TR[k] + " .mk";
+          T.to(mk, { opacity: 0, duration: 0.12 }, 4.32 + k * 0.05);
+          T.call(function (sel) { var e = document.querySelector(sel); if (e) e.innerHTML = CK; }, [mk], 4.44 + k * 0.05);
+          T.fromTo(mk, { opacity: 0, scale: 0.5 }, { opacity: 1, scale: 1, duration: 0.18, ease: "back.out(3)" }, 4.45 + k * 0.05);
+        }
+        T.fromTo("#card-build .allpass", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.32, ease: "back.out(1.6)" }, 4.55);
+        done(2, 4.6);
+        cardOut("#card-build", 4.78);
+
+        /* ===== SCENE 6 — PR / MR ===== */
+        activate("#n3", 4.82, "#a98bff");
+        cardIn("#card-pr", 4.85);
+        T.fromTo("#card-pr .prnum", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.28, ease: E_OUT }, 4.98);
+        T.fromTo("#card-pr .prtitle", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.28, ease: E_OUT }, 5.04);
+        T.fromTo("#card-pr .pr-chk", { opacity: 0, x: 12 }, { opacity: 1, x: 0, duration: 0.26, stagger: 0.1, ease: E_OUT }, 5.12);
+        T.fromTo("#open-pr", { opacity: 0, scale: 0.85 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2.2)" }, 5.4);
+        done(3, 5.56); /* PR/MR opened → mark rail node done as review begins */
+
+        /* raw (un-scaled) helpers — scenes 7–9 are hand-paced (slower) on the master timeline */
+        function nActivate(n, t, col) {
+          tl.to(n + " .pip", { borderColor: col, borderTopStyle: "solid", borderRightStyle: "solid",
+                               borderBottomStyle: "solid", borderLeftStyle: "solid", scale: 1.25, duration: 0.34, ease: "back.out(2)" }, t);
+          tl.to(n + " .ring-glow", { opacity: 0.9, duration: 0.34 }, t);
+          tl.to(n + " .lbl", { color: "#e9f1fb", duration: 0.34 }, t);
+          tl.to(n + " .ring-glow", { opacity: 0.35, duration: 0.9, ease: "sine.inOut" }, t + 0.34);
+        }
+        function nDone(idx, t) {
+          const n = NODE[idx];
+          tl.to(n + " .pip", { backgroundColor: "#3ee08a", borderColor: "#3ee08a", scale: 1.0, duration: 0.34, ease: E_OUT }, t);
+          tl.set(n + " .pip svg", { opacity: 1 }, t);
+          tl.fromTo(n + " .pip svg path", { opacity: 0 }, { opacity: 1, duration: 0.26 }, t + 0.02);
+          tl.to(n + " .ring-glow", { opacity: 0.0, duration: 0.45 }, t);
+          tl.to(n + " .lbl", { color: "#3ee08a", duration: 0.34 }, t);
+          tl.to(".track-fill", { scaleX: FILL[idx], duration: 0.5, ease: E_OUT }, t);
+        }
+        function nCardIn(sel, t)  { tl.fromTo(sel, { opacity: 0, xPercent: -50, x: 70 }, { opacity: 1, xPercent: -50, x: 0, duration: 0.5, ease: E_OUT4 }, t); }
+        function nCardOut(sel, t) { tl.to(sel, { opacity: 0, x: -60, duration: 0.4, ease: E_IN }, t); }
+
+        /* ===== SCENE 7 — strict review loop (slow, ~6.7–9.85) ===== */
+        nActivate("#n4", 6.7, "#a98bff");
+        tl.fromTo("#review-loop", { opacity: 0, xPercent: -50, scale: 0.82, rotation: -10 }, { opacity: 1, xPercent: -50, scale: 1, rotation: 0, duration: 0.7, ease: E_OUT4, transformOrigin: "center" }, 6.68);
+        tl.fromTo("#bubble", { opacity: 0, x: -22 }, { opacity: 1, x: 0, duration: 0.55, ease: E_OUT }, 6.95);
+        tl.fromTo("#avatars", { opacity: 0, x: 22 }, { opacity: 1, x: 0, duration: 0.55, ease: E_OUT }, 7.05);
+        /* slow rotation — clearly reads as a repeating loop */
+        tl.to("#review-loop .ring-svg", { rotation: 360, duration: 2.2, ease: "none", transformOrigin: "center" }, 7.0);
+        /* checks fade out as the amber verdict slides into the (now centered) body */
+        tl.to("#card-pr .pr-checks", { opacity: 0, y: -8, duration: 0.35, ease: E_IN }, 7.3);
+        /* AMBER: changes requested — held so the fix-loop reads */
+        tl.to("#rl-circle, #rl-circle2", { attr: { stroke: "#f6a93b" }, duration: 0.45 }, 7.55);
+        tl.to("#review-loop .rl-top, #review-loop .rl-bot", { color: "#f6a93b", duration: 0.45 }, 7.55);
+        tl.to("#n4 .ring-glow", { color: "#f6a93b", duration: 0.4 }, 7.55);
+        tl.fromTo("#rv-amber-grp", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.4, ease: "back.out(1.7)" }, 7.55);
+        tl.to("#rv-amber-grp .spin", { rotation: 360, duration: 1.0, ease: "power1.inOut", transformOrigin: "center" }, 7.7);
+        tl.to("#rv-amber-grp", { opacity: 0, y: -10, duration: 0.3, ease: E_IN }, 8.6);
+        /* GREEN: clean */
+        tl.to("#rl-circle, #rl-circle2", { attr: { stroke: "#3ee08a" }, duration: 0.5 }, 8.7);
+        tl.to("#review-loop .rl-top, #review-loop .rl-bot", { color: "#3ee08a", duration: 0.5 }, 8.7);
+        tl.to("#card-pr .panel", { borderColor: "#3ee08a", boxShadow: "0 0 30px rgba(62,224,138,0.32), 0 24px 60px rgba(0,0,0,0.5)", duration: 0.5 }, 8.7);
+        tl.fromTo("#rv-green-grp", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.45, ease: "back.out(1.7)" }, 8.74);
+        nDone(4, 8.95);
+        /* hold clean, then exit */
+        tl.to("#review-loop", { opacity: 0, scale: 1.08, duration: 0.42, ease: E_IN }, 9.5);
+        tl.to("#bubble, #avatars", { opacity: 0, duration: 0.36, ease: E_IN }, 9.5);
+        nCardOut("#card-pr", 9.54);
+
+        /* ===== SCENE 8 — rebase (slow, ~9.9–12.0) ===== */
+        nActivate("#n5", 9.9, "#38d4f2");
+        nCardIn("#card-rebase", 9.94);
+        tl.to("#main-line", { attr: { "stroke-dashoffset": 0 }, duration: 0.7, ease: E_OUT }, 10.2);
+        tl.fromTo(".c-main", { opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1, duration: 0.32, stagger: 0.13, ease: "back.out(2)", transformOrigin: "center" }, 10.24);
+        tl.fromTo(".c-tip", { opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(2.4)", transformOrigin: "center" }, 10.66);
+        tl.fromTo("#latest-lbl", { opacity: 0, x: -8 }, { opacity: 1, x: 0, duration: 0.4, ease: E_OUT }, 10.72);
+        tl.to(".c-tip", { filter: "drop-shadow(0 0 9px rgba(56,212,242,0.85))", duration: 0.5, repeat: 1, yoyo: true }, 10.78);
+        tl.to("#rebase-arc", { attr: { "stroke-dashoffset": 0 }, duration: 0.85, ease: "power2.inOut" }, 10.7);
+        tl.fromTo(".cm-new", { opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(2.4)", transformOrigin: "center" }, 11.35);
+        tl.fromTo("#rebased-pill", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.42, ease: "back.out(1.7)" }, 11.38);
+        nDone(5, 11.6);
+        nCardOut("#card-rebase", 12.0);
+
+        /* ===== SCENE 9 — merge gate (~12.15–13.35) ===== */
+        nActivate("#n6", 12.15, "#3ee08a");
+        nCardIn("#card-merge", 12.18);
+        tl.fromTo("#card-merge .mg-row", { opacity: 0, x: 12 }, { opacity: 1, x: 0, duration: 0.3, stagger: 0.13, ease: E_OUT }, 12.3);
+        tl.fromTo("#merge-btn", { opacity: 0, scale: 0.85 }, { opacity: 1, scale: 1, duration: 0.34, ease: "back.out(2.2)" }, 12.7);
+        tl.to("#merge-btn", { backgroundColor: "rgba(62,224,138,0.18)", boxShadow: "0 0 22px rgba(62,224,138,0.55)", duration: 0.34 }, 12.82);
+        nDone(6, 12.92);
+        tl.fromTo("#card-merge .merged-badge", { opacity: 0, scale: 0.92 }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(1.6)" }, 12.96);
+        tl.fromTo("#card-merge .confetti", { opacity: 0, y: -10 }, { opacity: 1, y: 70, duration: 0.8, stagger: 0.035, ease: "power1.in" }, 13.02);
+
+        /* ===== SCENE 10 — final title (extended hold) ===== */
+        tl.to("#card-merge", { opacity: 0, scale: 0.94, duration: 0.5, ease: E_IN }, 13.55);
+        tl.to("#rail", { opacity: 0, y: 16, duration: 0.5, ease: E_IN }, 13.55);
+        tl.to(".g-cyan, .g-purple", { opacity: 0.32, duration: 0.8 }, 13.45);
+        tl.to(".persp", { opacity: 1, duration: 0.9, ease: E_OUT }, 13.5);
+        tl.fromTo("#final", { opacity: 0 }, { opacity: 1, duration: 0.45 }, 13.65);
+        tl.fromTo("#final .brand", { opacity: 0, y: 40, scale: 0.95 }, { opacity: 1, y: 0, scale: 1, duration: 0.8, ease: E_OUT4 }, 13.7);
+        tl.fromTo("#final .sub", { opacity: 0, y: 22 }, { opacity: 1, y: 0, duration: 0.6, ease: E_EXPO }, 14.1);
+        tl.fromTo("#final .tag", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.6, ease: E_OUT }, 14.4);
+        tl.fromTo("#final .wt", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.55, ease: E_OUT }, 14.7);
+        tl.to("#final .brand", { scale: 1.012, duration: 1.1, ease: "sine.inOut", transformOrigin: "center" }, 14.9);
+
+        /* ===== LOOP SEAM: title fully out, THEN empty terminal settles (matches frame 0) ===== */
+        tl.to("#final", { opacity: 0, y: -18, duration: 0.3, ease: E_IN }, 15.4);
+        tl.to(".persp", { opacity: 0, duration: 0.3, ease: E_IN }, 15.4);
+        tl.to(".g-cyan, .g-purple", { opacity: 0.5, duration: 0.4 }, 15.45);
+        tl.set(revealEl, { width: 0 }, 15.35);
+        tl.set("#prompt-card", { x: 0, y: 0, scale: 0.9, opacity: 0 }, 15.35);
+        tl.set(".streaks", { opacity: 0, x: 0 }, 15.35);
+        tl.fromTo("#terminal", { opacity: 0, scale: 0.94, y: 18 }, { opacity: 1, scale: 1, y: 0, duration: 0.32, ease: E_OUT, transformOrigin: "center", immediateRender: false }, 15.72);
+
+        /* sentinel — extend to full duration */
+        tl.set({}, {}, 16);
+
+        window.__timelines["main"] = tl;
+      </script>
+    </div>
+  </body>
+</html>

@@ -9,3 +9,11 @@
 # Worktrees created by forge live as a SIBLING of the target repo, never inside
 # this one — but ignore the dir name defensively in case anyone runs forge here.
 .forge-worktrees/
+.agents/
+.claude/
+skills-lock.json
+refs/
+
+# Ignore scaffolded HyperFrames projects, but keep the committed banner source.
+docs/hyperframes/*
+!docs/hyperframes/yaah-banner/
