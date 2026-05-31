@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Worktrees created by forge live as a SIBLING of the target repo, never inside
+# this one — but ignore the dir name defensively in case anyone runs forge here.
+.forge-worktrees/
