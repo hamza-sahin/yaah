@@ -4,6 +4,9 @@
 #   ./install.sh                      # install globally to ~/.claude/skills
 #   ./install.sh --project <repo>     # install to <repo>/.claude/skills
 #
+# After installing, open Claude Code in your repo and run /setup-yaah once to
+# generate that repo's .yaah/config.yml (tracker, default branch, checks). Then
+# /forge <task> drives the pipeline.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -22,7 +25,11 @@ chmod +x "$dest/forge/scripts/forge-worktree.sh" 2>/dev/null || true
 
 echo "yaah installed to: $dest"
 echo "Skills:"
-for d in "$dest"/forge "$dest"/grill-with-docs "$dest"/to-issues "$dest"/handoff "$dest"/tdd "$dest"/thermo-nuclear-code-quality-review; do
+for d in "$dest"/setup-yaah "$dest"/forge "$dest"/grill-with-docs "$dest"/to-issues "$dest"/handoff "$dest"/tdd "$dest"/thermo-nuclear-code-quality-review; do
   [ -d "$d" ] && echo "  - $(basename "$d")"
 done
-echo "Start a new Claude Code session and run /forge to use it."
+echo
+echo "Next:"
+echo "  1. Open Claude Code in your repo."
+echo "  2. Run /setup-yaah once   (creates .yaah/config.yml for this repo)."
+echo "  3. Run /forge <task>      (drives the pipeline)."
