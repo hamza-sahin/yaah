@@ -175,28 +175,51 @@ No language/runtime is required by yaah itself — your `checks` commands decide
 
 ## Credits
 
-yaah stands on the shoulders of excellent third-party skills. The orchestration
-(`forge`) and the setup interview (`setup-yaah`) are original; the five sub-skills it
-chains are not, and full credit goes to their authors:
+yaah only exists because the community shared its work first. 🙏 We wrote the glue —
+the orchestration (`forge`) and the setup interview (`setup-yaah`) are ours — but the
+five skills it chains together come from people who figured the hard parts out before
+us. Huge thanks to them:
 
 - **[mattpocock/skills](https://github.com/mattpocock/skills)** — `grill-with-docs`,
-  `to-issues`, `handoff`, and `tdd` come from Matt Pocock's skills collection.
+  `to-issues`, `handoff`, and `tdd` are from Matt Pocock's lovely skills collection. Go
+  star his repo.
 - **[cursor/plugins](https://github.com/cursor/plugins/blob/main/cursor-team-kit/skills/thermo-nuclear-code-quality-review/SKILL.md)**
-  — `thermo-nuclear-code-quality-review` comes from the Cursor team kit.
+  — `thermo-nuclear-code-quality-review` comes from the Cursor team kit. Thanks, Cursor
+  folks.
 
-These skills are vendored here so the pipeline works out of the box; consult the
-upstream repos for canonical versions, updates, and their own licenses. If you are an
-author and would prefer a different attribution or a submodule reference instead of a
-vendored copy, please open an issue.
+We vendor these here so the pipeline works the moment you clone it — but please check
+out the upstream repos for the canonical versions, updates, and licenses. And if you're
+one of the authors: this is *your* work, so if you'd like the attribution worded
+differently, a link changed, or a submodule reference instead of a vendored copy, just
+open an issue and we'll happily sort it out.
 
-The optional token-efficiency tools are separate projects, not vendored — yaah only
-installs and configures them with your consent. Full credit to their authors:
+The optional token-efficiency tools are separate projects we don't vendor — yaah simply
+installs and configures them once you say yes. Big thanks to the people behind them too:
 
 - **[graphify](https://github.com/safishamsi/graphify)** by Safi Shamsi — codebase
   knowledge graph (`pip install graphifyy`).
 - **[rtk](https://github.com/rtk-ai/rtk)** by rtk-ai — token-saving command proxy.
 - **[caveman](https://github.com/JuliusBrussee/caveman)** by Julius Brussee — terse
   agent-output mode.
+
+---
+
+## Nominate a skill
+
+yaah is small on purpose, but it's far from finished — and we'd genuinely love your
+help shaping it. Know a skill that would sharpen one of the phases, or replace a manual
+step with something repeatable? Bring it to us:
+
+- **Got an idea?** Open an issue titled `nominate: <skill-name>` — even a rough sketch
+  is welcome. Tell us which phase it improves (or whether it's a whole new one) and why
+  it'd beat what we do today.
+- **Ready to ship it?** Open a PR adding it under `.claude/skills/`, with a one-line
+  entry in the table above and a note in Credits so its author gets the love.
+- **Just here to chat?** Issues and discussions are open. Questions, half-baked
+  thoughts, and "wouldn't it be cool if…" are all fair game.
+
+We'll always credit where things came from, and we'll always tell you what we think.
+Looking forward to building this with you. 🚀
 
 ## License
 
