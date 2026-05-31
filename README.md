@@ -1,6 +1,14 @@
+<p align="center">
+  <img src="docs/assets/yaah-banner.gif" alt="yaah — one prompt → GRILL → ISSUE → BUILD (TDD) → PR/MR → strict REVIEW LOOP → REBASE → MERGE, in isolated worktrees" width="100%">
+</p>
+
+<p align="center">
+  <em><code>/forge</code> in ten seconds — <a href="docs/assets/yaah-banner.mp4">watch the MP4</a></em>
+</p>
+
 # yaah — Yet Another Agent Harness
 
-A small, opinionated harness for **Claude Code** that turns a one-line prompt into a
+A lightweight, opinionated harness for **Claude Code** that turns a one-line prompt into a
 reviewed, merge-ready pull/merge request — with almost no babysitting.
 
 Its centerpiece is **`/forge`**: a single skill that chains five focused skills into
@@ -9,6 +17,26 @@ approve once before merge. Everything in between — issue creation, implementat
 code review, fix loops, knowledge-graph refresh, rebasing onto the latest default
 branch — runs hands-off, each step inside an isolated git worktree so you can run many
 forges in parallel without them colliding.
+
+**This is built for real software engineers who want to ship — and align properly while
+they do it.** Not a demo, not a vibe-coding toy that hands you a pile of unreviewed
+diffs. `/forge` is opinionated about what "done" means, and a few principles run through
+the whole thing:
+
+- **Alignment before code.** Nothing gets built until the requirements are pinned down
+  with you. The grilling phase is where you and the agent agree on *what* and *why*; the
+  rest of the pipeline is just honoring that contract.
+- **Ship reviewed work, never raw output.** Every change is test-driven and run through
+  a strict review→fix loop until it's clean — no round limit, no "good enough." What
+  lands is something you'd be comfortable putting your name on.
+- **Stay in the loop where it matters, out of it where it doesn't.** Two human
+  touchpoints — the requirements interview and the final merge approval. Between them the
+  agent doesn't pester you; it just does the work and fixes its own mistakes.
+- **Never merge blindly.** The one approval rebases onto the latest default branch and
+  re-runs review against the freshly-merged context before it merges. Your main branch
+  stays honest.
+- **Reuse the community's best, don't reinvent.** Each phase is a real, standalone skill
+  from people who solved that problem well — `/forge` is the glue, not a monolith.
 
 **Stack-agnostic and tracker-agnostic.** forge works on any language/build system and
 with either **GitHub (`gh`)** or **GitLab (`glab`)**. It carries no hardcoded stack: a
@@ -206,7 +234,7 @@ installs and configures them once you say yes. Big thanks to the people behind t
 
 ## Nominate a skill
 
-yaah is small on purpose, but it's far from finished — and we'd genuinely love your
+yaah is lightweight on purpose, but it's far from finished — and we'd genuinely love your
 help shaping it. Know a skill that would sharpen one of the phases, or replace a manual
 step with something repeatable? Bring it to us:
 
