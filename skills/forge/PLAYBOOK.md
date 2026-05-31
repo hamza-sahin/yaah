@@ -30,7 +30,7 @@ Per-phase mechanics, the subagent prompt templates, and edge cases. SKILL.md is 
 ## Phase 3 — BUILD (handoff → implementer → tdd)
 
 1. Call the Skill tool with `handoff`, scoped to "prompt a fresh agent to implement issue #N via TDD inside `$WORKTREE`." The doc **references the issue by URL** + the grilled decisions/doc changes — it does not restate the issue body.
-2. Deliver the build prompt to the **configured implementer engine** (`implementer.engine`, default `claude`) — exact mechanics in **Implementer engines** below. The prompt = the handoff doc + the build contract below, with `<CHECKS>` and `<CLI>` filled from config (and the `/tdd` line adapted per engine).
+2. Deliver the build prompt to the **configured implementer engine** (`implementer.engine`, default `claude`) — exact mechanics in **Implementer engines** below. The prompt = the handoff doc + the build contract below, with `<CHECKS>` and `<CLI>` filled from config (and the `/tdd` line adapted per engine). For a CLI engine (`cursor`/`codex`) write that prompt to a `.md` file and run `forge-implement.sh` — **never hand-build the CLI command**.
 3. Read the returned receipt; write `pr` (and, for cursor, the session id) into state. A **missing PR/MR after a retry** is a hard blocker. A **failing check is NOT** a blocker — re-run the implementer with tightened guidance (the loop has no cap); only a genuinely unrecoverable failure stops the run.
 
 ### Subagent build prompt (template)
@@ -67,69 +67,53 @@ Do this:
 
 ### Implementer engines
 
-The build prompt above and the fix prompt in Phase 4 are **engine-agnostic** — the same text runs under any engine. `implementer.engine` is `claude` (default), `cursor`, or `codex`; `implementer.model` (cursor/codex) optionally overrides the model. A missing block ⇒ `claude`. Receipt format and success contract are identical; only *how* the prompt is delivered and the receipt is read differs. `cursor` and `codex` are **CLI engines** — both run an autonomous coding-agent binary headlessly inside `$WORKTREE`, share the prompt-adaptation + timeout + preflight rules, and differ only in flag syntax and how the receipt is read.
+The build prompt above and the fix prompt in Phase 4 are **engine-agnostic** — the same text runs under any engine. `implementer.engine` is `claude` (default), `cursor`, or `codex`; `implementer.model` (cursor/codex) optionally overrides the model. A missing block ⇒ `claude`. Receipt format and success contract are identical; only *how* the prompt is delivered differs.
 
 #### `claude` (default) — a Claude Code subagent
 
 Spawn exactly **one** subagent via the Agent tool, `subagent_type: general-purpose` (it needs Bash + the tracker CLI + edit tools), cwd `$WORKTREE`, prompt = the build prompt (Phase 3) or the fix prompt (Phase 4). The subagent's final message **is** the receipt. Fix rounds are a fresh Agent call with the fix prompt.
 
-#### `cursor` — the Cursor Agent CLI
+#### `cursor` / `codex` — CLI engines, invoked via `forge-implement.sh`
 
-Run the `cursor-agent` CLI (Cursor's coding agent) headlessly against the worktree. Under `-p --force` it edits files and runs shell commands — git, `gh`/`glab`, the configured checks — with no approval prompt, which is exactly what an autonomous builder needs. The binary is `cursor-agent` (an `agent` alias also exists; prefer `cursor-agent` to avoid PATH collisions).
+> **NEVER hand-build the cursor/codex command line.** Hand-assembling it inline is what broke a real run (zsh word-splitting an unquoted `${TO:+…}` timeout, quoting the prompt, `EXIT=127`). Instead: **write the prompt to a `.md` file and call the bundled script.** It assembles argv with bash arrays (no word-splitting), wraps a portable timeout (`timeout`/`gtimeout`/none), feeds the prompt from the file via stdin (no inlining, no `ARG_MAX`, no quoting), parses the receipt per engine, and prints one machine-parseable block.
 
-*Preflight* (Phase 0, once per run — each is a hard blocker on failure):
+**Build** (`<forge-skill-dir>` = where yaah is installed, same as `forge-worktree.sh`):
 ```
-cursor-agent --version            # present? else install:  curl https://cursor.com/install -fsS | bash
-[ -n "$CURSOR_API_KEY" ] || cursor-agent status   # authed? else  export CURSOR_API_KEY=…  or  cursor-agent login
+PROMPT_FILE="$(mktemp "${TMPDIR:-/tmp}/forge-prompt-XXXXXX").md"
+# write the FULL build prompt (handoff + build contract, /tdd line inlined — see below) into it, then:
+bash <forge-skill-dir>/scripts/forge-implement.sh \
+  --engine "$ENGINE" --workspace "$WORKTREE" --prompt-file "$PROMPT_FILE" \
+  [--model "$MODEL"] [--timeout 3600]
 ```
+**Fix round** (same script, `--mode fix`):
+```
+bash <forge-skill-dir>/scripts/forge-implement.sh \
+  --engine "$ENGINE" --workspace "$WORKTREE" --prompt-file "$FIX_PROMPT_FILE" --mode fix \
+  [--session "$SESSION"] [--model "$MODEL"]
+```
+- **cursor fix:** pass `--session "$SESSION"` (the `SESSION=` value the build printed) to resume that chat; if lost, omit it and the script falls back to `--continue`.
+- **codex fix:** omit `--session` — codex has no surfaced id, so the script resumes the worktree's most recent session via `--last` (run from `$WORKTREE`, which the script handles).
 
-*Build invocation* (pointed at `$WORKTREE`; add `--model "$MODEL"` only when `implementer.model` is set):
+**Read the script's tail block** (always the last lines of stdout):
 ```
-cursor-agent -p --force --trust \
-  --workspace "$WORKTREE" \
-  --output-format json \
-  "$BUILD_PROMPT"
+===FORGE-IMPLEMENT===
+ENGINE=… MODE=… EXIT=… STATUS=ok|fail SESSION=… RECEIPT_FILE=… STDOUT_LOG=… STDERR_LOG=…
 ```
-- `-p` = non-interactive/print mode (grants tool access); `--force` = auto-approve edits + shell (alias `--yolo`); `--trust` = skip the workspace-trust prompt (a fresh forge worktree is an "untrusted" dir and would otherwise hang). Both `-p` **and** `--force` are required — `-p` alone only *proposes* changes, never applies them.
-- `--output-format json` emits ONE object on success: `{"result":"<final text = the receipt>","session_id":"<uuid>","is_error":false,…}`. Read `.result` for the receipt and **save `.session_id` into state** for fix rounds. (On failure no well-formed JSON is emitted — guard the parse.)
-- **Run it under a timeout** — the CLI has known hangs. Invoke via the Bash tool with its `timeout` raised toward the 600000 ms max, and/or prefix `timeout 600` / `gtimeout 600` where that binary exists. A timeout counts as a failed round → re-run with tightened guidance.
-- **Success gate: exit code 0 AND `.is_error == false`.** Never infer success from stdout text alone.
+- `STATUS=ok` → the receipt is in `RECEIPT_FILE` (also echoed between `===RECEIPT===`/`===END RECEIPT===`). For cursor, **save `SESSION` into state** for the fix round.
+- `STATUS=fail` or `EXIT≠0` → failed round (read `STDERR_LOG`); re-run with tightened guidance — **no cap**. `EXIT=124` = timed out. A missing/unauthed binary the preflight missed shows as `EXIT=2`/`127` here.
 
-*Prompt adaptation (CLI engines — cursor & codex).* Neither CLI has Claude Code skills, so replace the build contract's step 2 — "Invoke the /tdd skill…" — with this inline directive:
+*Preflight* (Phase 0, once per run — hard blocker on failure):
+- **cursor:** `cursor-agent --version`; `[ -n "$CURSOR_API_KEY" ] || cursor-agent status`. Install: `curl https://cursor.com/install -fsS | bash`; auth: `cursor-agent login`.
+- **codex:** `codex --version`; `codex login status`. Install: `npm i -g @openai/codex`; auth: `codex login` (or `OPENAI_API_KEY`).
+
+*Prompt adaptation (cursor & codex).* Neither CLI has Claude Code skills, so in the prompt file replace the build contract's step 2 — "Invoke the /tdd skill…" — with this inline directive:
 > Work strictly test-first in **red → green → refactor** cycles, one behavior at a time. Build **vertical tracer bullets** (a thin slice through every layer), not horizontal layers. Test behavior through **public interfaces**, never implementation details; mock only true external boundaries (network, clock, filesystem), never internal collaborators. Refactor only on green. Do NOT create a new branch.
 
 (Optional alternative: write those standing rules to `$WORKTREE/AGENTS.md` before the run — both `cursor-agent` and `codex` auto-read `AGENTS.md` at the workspace root — and keep the prompt to the actionable task. Inlining is the simpler, self-contained default.)
 
-#### `codex` — the OpenAI Codex CLI
-
-Run the `codex` CLI's non-interactive `exec` subcommand against the worktree. Under `--dangerously-bypass-approvals-and-sandbox` it edits files and runs shell commands (git, `gh`/`glab`, the checks) with no approval prompt and no sandbox — the network access a push/PR needs. (Don't rely on a shell alias for that flag; pass it explicitly.)
-
-*Preflight* (Phase 0, once per run — each a hard blocker on failure):
-```
-codex --version          # present? else install:  npm i -g @openai/codex   (or brew install codex)
-codex login status       # authed? else  codex login   (or set OPENAI_API_KEY / codex login --with-api-key)
-```
-
-*Build invocation* (`RECEIPT` is a temp file OUTSIDE the worktree so the agent can't commit it; add `--model "$MODEL"` only when `implementer.model` is set):
-```
-RECEIPT="$(mktemp)"
-codex exec --dangerously-bypass-approvals-and-sandbox \
-  --cd "$WORKTREE" \
-  --output-last-message "$RECEIPT" \
-  "$BUILD_PROMPT"
-```
-- `exec` = non-interactive (no approval prompts by design); `--dangerously-bypass-approvals-and-sandbox` additionally drops the sandbox so writes + network work. `--cd "$WORKTREE"` sets the working root. `-m/--model` optional (blank ⇒ the model from `~/.codex/config.toml`).
-- `--output-last-message "$RECEIPT"` writes the agent's final message to that file — **that file is the receipt.** Read it after the run. (`--json` would stream JSONL events instead; not needed when you only want the receipt.)
-- Same **timeout** wrapper as cursor (raise the Bash-tool timeout, optionally prefix `timeout`/`gtimeout`).
-- **Success gate: exit code 0** (codex exits non-zero on failure, with the error on stderr; there is no `is_error` field). Read the receipt only on exit 0.
-
-*Fix round (codex).* Resume the build session so context carries over. `codex exec resume` remembers the session's cwd, so it takes **no `--cd`** — run it from inside `$WORKTREE`:
-```
-codex exec resume --last --dangerously-bypass-approvals-and-sandbox \
-  --output-last-message "$RECEIPT" \
-  "$FIX_PROMPT"
-```
-`--last` resumes the most recent session for the current cwd (worktree) — robust across parallel runs since each worktree has its own cwd. For an explicit handle instead, capture the `session_id` from a build run with `--json` and resume by id: `codex exec resume <session_id> …`.
+*Under the hood* (what the script runs — for maintainers; the orchestrator never types these):
+- **cursor:** `cursor-agent -p --force --trust --workspace W [--model M] --output-format json` with the prompt on stdin; fix adds `--resume <id>` (or `--continue`). Receipt = `.result`, session = `.session_id`; `STATUS=ok` iff exit 0 **and** `.is_error == false`.
+- **codex:** `codex exec --dangerously-bypass-approvals-and-sandbox --cd W --output-last-message R [--model M]` with the prompt on stdin; fix = `codex exec resume --last|<id> … ` run from `W` (resume takes no `--cd`). Receipt = the `R` file; `STATUS=ok` iff exit 0 and `R` non-empty.
 
 ## Phase 4 — REVIEW (loop, no cap)
 
@@ -161,20 +145,15 @@ Do this:
    open:     <anything you intentionally did not change, with why>
 ```
 
-**Engine dispatch (fix round).** Same engines as Phase 3's **Implementer engines**, but resuming context:
+**Engine dispatch (fix round).** Same engines as Phase 3's **Implementer engines**, resuming context:
 - `claude`: a fresh Agent call (`general-purpose`), prompt = the fix prompt above. (Pass the build summary in the prompt — a new subagent has no memory of the build.)
-- `cursor`: re-invoke the saved session so it keeps full build context —
+- `cursor` / `codex`: write the fix prompt to a `.md` file and re-run the script with `--mode fix` —
   ```
-  cursor-agent -p --force --trust --workspace "$WORKTREE" --resume "$SID" \
-    --output-format json "$FIX_PROMPT"
+  bash <forge-skill-dir>/scripts/forge-implement.sh \
+    --engine "$ENGINE" --workspace "$WORKTREE" --prompt-file "$FIX_PROMPT_FILE" --mode fix \
+    [--session "$SESSION"] [--model "$MODEL"]
   ```
-  `--resume "$SID"` continues the build session captured in state (`--continue` resumes the most recent if the id is lost); add `--model "$MODEL"` if set. Same success gate (exit 0 + `.is_error == false`) and timeout wrapper as the build invocation. For cursor, the per-thread replies (step 3) are ordinary `gh`/`glab` shell commands it runs under `--force`.
-- `codex`: resume the build session (run from inside `$WORKTREE`; `resume` takes no `--cd`) —
-  ```
-  codex exec resume --last --dangerously-bypass-approvals-and-sandbox \
-    --output-last-message "$RECEIPT" "$FIX_PROMPT"
-  ```
-  `--last` continues the most recent session for that worktree's cwd (or pass an explicit `<session_id>`); add `--model "$MODEL"` if set. Receipt = the `$RECEIPT` file; success gate = exit 0. Replies (step 3) are ordinary `gh`/`glab` commands codex runs under bypass.
+  cursor passes `--session "$SESSION"` (saved from the build) to keep full context; codex omits it (resumes via `--last`). Read the same tail block; gate on `STATUS=ok`. The per-thread replies (step 3) are ordinary `gh`/`glab` commands the agent runs autonomously inside the run.
 
 ## Phase 5 — RECAP
 

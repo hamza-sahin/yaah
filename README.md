@@ -126,7 +126,7 @@ hard blocker instead of being forced.
 | Skill | Role | Standalone | Source |
 |-------|------|------------|--------|
 | **setup-yaah** | One-time interactive setup. Detects stack + tracker + default branch, confirms with you, offers to install the token-efficiency tools, writes `.yaah/config.yml`. Bundles `scm-commands.md` (the GitHub-vs-GitLab command recipes) and `efficiency-tools.md` (graphify/rtk/caveman install + wiring). | run once | yaah |
-| **forge** | The orchestrator. `SKILL.md` is the spine; `PLAYBOOK.md` holds per-phase mechanics + subagent prompt templates; `scripts/forge-worktree.sh` creates/removes isolated worktrees and auto-detects the default branch. | — | yaah |
+| **forge** | The orchestrator. `SKILL.md` is the spine; `PLAYBOOK.md` holds per-phase mechanics + subagent prompt templates; `scripts/forge-worktree.sh` creates/removes isolated worktrees; `scripts/forge-implement.sh` runs the cursor/codex CLI engines (prompt passed as a file, safe argv, parsed receipt). | — | yaah |
 | **grill-with-docs** | Phase 1 — interrogates the plan against your domain model, sharpens terminology, updates `CONTEXT.md` / ADRs inline. | ✅ | [mattpocock](#credits) |
 | **to-issues** | Phase 2 — breaks the locked plan into tracer-bullet vertical slices and files them in dependency order. | ✅ | [mattpocock](#credits) |
 | **handoff** | Phase 3 — compacts context into a tight brief for the implementing subagent. | ✅ | [mattpocock](#credits) |
@@ -188,9 +188,12 @@ tools:                 # token-efficiency tools (all optional, independent)
 > - `engine: cursor` → [`cursor-agent`](https://cursor.com/cli) (`-p --force --trust`), authed via `CURSOR_API_KEY` or `cursor-agent login`.
 > - `engine: codex` → OpenAI [`codex exec`](https://developers.openai.com/codex/cli) (`--dangerously-bypass-approvals-and-sandbox`), authed via `codex login` or `OPENAI_API_KEY`.
 >
-> Same build/fix prompt either way — only the delivery changes. forge preflights the chosen
-> CLI at Phase 0 (a missing/unauthed binary is a hard blocker). `model` is engine-specific
-> (reset it when switching); a missing `implementer` block reads as `claude`.
+> Same build/fix prompt either way — only the delivery changes. The CLI engines are driven by
+> a bundled `scripts/forge-implement.sh` (the prompt is passed as a `.md` file, argv is built
+> safely, the receipt is parsed) so the orchestrator never hand-assembles a fragile shell
+> command. forge preflights the chosen CLI at Phase 0 (a missing/unauthed binary is a hard
+> blocker). `model` is engine-specific (reset it when switching); a missing `implementer`
+> block reads as `claude`.
 
 > Older configs may carry a top-level `graphify: true` instead of the `tools:` block;
 > forge still honors it. New configs written by `/setup-yaah` use the block.
