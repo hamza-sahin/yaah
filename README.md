@@ -13,7 +13,7 @@ forges in parallel without them colliding.
 **Stack-agnostic and tracker-agnostic.** forge works on any language/build system and
 with either **GitHub (`gh`)** or **GitLab (`glab`)**. It carries no hardcoded stack: a
 one-time `/setup-yaah` interview writes a per-repo `.yaah/config.yml` (tracker, default
-branch, test/lint commands, issue label, graphify on/off) that forge reads at run time.
+branch, test/lint commands, issue label, token-efficiency tools) that forge reads at run time.
 
 ---
 
@@ -97,7 +97,7 @@ hard blocker instead of being forced.
 
 | Skill | Role | Standalone | Source |
 |-------|------|------------|--------|
-| **setup-yaah** | One-time interactive setup. Detects stack + tracker + default branch, confirms with you, writes `.yaah/config.yml`. Bundles `scm-commands.md` (the GitHub-vs-GitLab command recipes forge uses). | run once | yaah |
+| **setup-yaah** | One-time interactive setup. Detects stack + tracker + default branch, confirms with you, offers to install the token-efficiency tools, writes `.yaah/config.yml`. Bundles `scm-commands.md` (the GitHub-vs-GitLab command recipes) and `efficiency-tools.md` (graphify/rtk/caveman install + wiring). | run once | yaah |
 | **forge** | The orchestrator. `SKILL.md` is the spine; `PLAYBOOK.md` holds per-phase mechanics + subagent prompt templates; `scripts/forge-worktree.sh` creates/removes isolated worktrees and auto-detects the default branch. | — | yaah |
 | **grill-with-docs** | Phase 1 — interrogates the plan against your domain model, sharpens terminology, updates `CONTEXT.md` / ADRs inline. | ✅ | [mattpocock](#credits) |
 | **to-issues** | Phase 2 — breaks the locked plan into tracer-bullet vertical slices and files them in dependency order. | ✅ | [mattpocock](#credits) |
@@ -107,6 +107,26 @@ hard blocker instead of being forced.
 
 Only **forge** and **setup-yaah** are original to yaah. The five sub-skills are
 third-party work — see [Credits](#credits).
+
+---
+
+## Token-efficiency tools
+
+`/setup-yaah` also offers to install three optional, independent tools that cut token
+use while an agent works your repo. It detects each, shows the exact install command,
+and asks before running anything (these touch global state or need a Claude Code
+restart). Full recipes live in `setup-yaah/efficiency-tools.md`; choices are recorded
+under `tools:` in `.yaah/config.yml`.
+
+| Tool | Saves | Scope | forge integration |
+|------|-------|-------|-------------------|
+| **[graphify](https://github.com/safishamsi/graphify)** | input — query a codebase graph instead of grepping/reading raw files | binary global; graph + hook **per-repo** | refreshes the graph in Phase 6 (`graphify update .`) |
+| **[rtk](https://github.com/rtk-ai/rtk)** | input — rewrites shell commands to token-lean equivalents | **global** (machine-level) | transparent — works via its own hook |
+| **[caveman](https://github.com/JuliusBrussee/caveman)** | output — answers the agent gives are made terse | **global** (machine-level) | transparent — works via its own hook |
+
+Only **graphify** changes forge's behavior; **rtk** and **caveman** operate entirely
+through their global Claude Code hooks, so the agent (and forge's subagents) benefit
+without forge doing anything. Enable any subset — they're orthogonal.
 
 ---
 
@@ -122,8 +142,15 @@ issue_label: ""        # label applied to forge-created issues, or "" for none
 checks:                # run in order; each MUST exit non-zero on failure
   - "npm test"
   - "npm run lint"
-graphify: false        # run `graphify update .` to refresh a knowledge graph in Phase 6
+
+tools:                 # token-efficiency tools (all optional, independent)
+  graphify: false      # codebase knowledge graph; forge runs `graphify update .` in Phase 6
+  rtk: false           # token-saving Bash proxy (global PreToolUse hook)
+  caveman: false       # terse-output agent mode (global Claude Code plugin)
 ```
+
+> Older configs may carry a top-level `graphify: true` instead of the `tools:` block;
+> forge still honors it. New configs written by `/setup-yaah` use the block.
 
 Commit it so your whole team — and every agent — shares one setup. Re-run `/setup-yaah`
 anytime to change a value.
@@ -137,8 +164,10 @@ anytime to change a value.
 - **A tracker CLI, authenticated:**
   - GitHub → [`gh`](https://cli.github.com/) (`gh auth login`)
   - GitLab → [`glab`](https://gitlab.com/gitlab-org/cli) (`glab auth login`)
-- *(optional)* **graphify** — if `graphify: true`, Phase 6 runs `graphify update .`. If
-  it isn't installed, forge notes it and continues.
+- *(optional)* **Token-efficiency tools** — `/setup-yaah` can install them, or do it yourself:
+  - **graphify** → `pip install graphifyy` (if `tools.graphify: true`, Phase 6 runs `graphify update .`; if absent, forge notes it and continues).
+  - **rtk** → `brew install rtk` then `rtk init -g` (global Bash proxy; restart Claude Code).
+  - **caveman** → `curl -fsSL https://raw.githubusercontent.com/JuliusBrussee/caveman/main/install.sh | bash` (Node ≥18; restart Claude Code).
 
 No language/runtime is required by yaah itself — your `checks` commands decide what runs.
 
@@ -159,6 +188,15 @@ These skills are vendored here so the pipeline works out of the box; consult the
 upstream repos for canonical versions, updates, and their own licenses. If you are an
 author and would prefer a different attribution or a submodule reference instead of a
 vendored copy, please open an issue.
+
+The optional token-efficiency tools are separate projects, not vendored — yaah only
+installs and configures them with your consent. Full credit to their authors:
+
+- **[graphify](https://github.com/safishamsi/graphify)** by Safi Shamsi — codebase
+  knowledge graph (`pip install graphifyy`).
+- **[rtk](https://github.com/rtk-ai/rtk)** by rtk-ai — token-saving command proxy.
+- **[caveman](https://github.com/JuliusBrussee/caveman)** by Julius Brussee — terse
+  agent-output mode.
 
 ## License
 

@@ -19,7 +19,7 @@ forge is stack- and tracker-agnostic. All repo-specific settings live in **`.yaa
 - `default_branch` — the branch to base worktrees on and merge into (blank = auto-detect).
 - `checks` — the ordered commands the builder runs and forge re-checks before merge.
 - `issue_label` — label applied to forge-created issues (optional).
-- `graphify` — whether Phase 6 refreshes a knowledge graph.
+- `tools.graphify` — whether Phase 6 refreshes the codebase knowledge graph (legacy top-level `graphify:` is still honored). `tools.rtk` and `tools.caveman` are global token-savers that operate through their own Claude Code hooks; forge takes **no** per-phase action on them — they help transparently, including inside the builder/reviewer subagents. Recipes: `setup-yaah/efficiency-tools.md`.
 
 At Phase 0, read this file. **If it is missing, invoke `/setup-yaah` first**, then continue with the values it wrote. Wherever a phase below says "the tracker CLI", "the checks", or "the default branch", it means the value from this config.
 
@@ -65,12 +65,12 @@ forge state
    - **approved** → Phase 5.
    - **changes-requested** → re-spawn the TDD subagent with the findings + comment IDs; it fixes on the **same `$WORKTREE`/`$BRANCH`**, replies on each comment thread, pushes; then re-run this phase, `round += 1`. **Loop until approved — no cap, no escalation.**
 5. **RECAP** — Summarize: locked decisions + doc changes, issue link(s), PR/MR link(s), rounds taken, final verdict, checks run (flag any not green).
-6. **MERGE** — Present the gate ONLY if the reviewer approved AND all required checks are green (otherwise keep looping). Ask the user to approve merging `$BRANCH` to the default branch. **On approval, sync-then-verify before merging** (all autonomous — this is still one user gate): in `$WORKTREE`, `git fetch origin <default-branch>`; if it moved, **rebase `$BRANCH` onto `origin/<default-branch>`** (rebase, never a merge commit — keeps concurrent base-branch changes without discarding the PR/MR); if `graphify: true`, run `graphify update .` and commit any graph change; `git push --force-with-lease`; then **re-run the Phase 4 review loop once as verification** (no cap — run normal fix rounds if it surfaces anything, re-running graphify after each code change). When that pass is clean, merge via the tracker CLI. After merge: `cd` to the main repo, `git checkout <default-branch> && git pull`, then `bash <forge-skill-dir>/scripts/forge-worktree.sh remove "$WORKTREE"`. A rebase conflict you cannot resolve cleanly is a hard blocker — surface and stop. If declined, leave everything in place and stop.
+6. **MERGE** — Present the gate ONLY if the reviewer approved AND all required checks are green (otherwise keep looping). Ask the user to approve merging `$BRANCH` to the default branch. **On approval, sync-then-verify before merging** (all autonomous — this is still one user gate): in `$WORKTREE`, `git fetch origin <default-branch>`; if it moved, **rebase `$BRANCH` onto `origin/<default-branch>`** (rebase, never a merge commit — keeps concurrent base-branch changes without discarding the PR/MR); if `tools.graphify` (or legacy `graphify`) is true, run `graphify update .` and commit any graph change; `git push --force-with-lease`; then **re-run the Phase 4 review loop once as verification** (no cap — run normal fix rounds if it surfaces anything, re-running graphify after each code change). When that pass is clean, merge via the tracker CLI. After merge: `cd` to the main repo, `git checkout <default-branch> && git pull`, then `bash <forge-skill-dir>/scripts/forge-worktree.sh remove "$WORKTREE"`. A rebase conflict you cannot resolve cleanly is a hard blocker — surface and stop. If declined, leave everything in place and stop.
 
 ## Guardrails (the contract, restated)
 
 - **Invoke every sub-skill for real** — never paraphrase or reimplement, the reviewer included.
-- **Config-driven, not hardcoded.** Tracker CLI, checks, default branch, label, and graphify all come from `.yaah/config.yml` — never assume a stack or `gh`-vs-`glab`.
+- **Config-driven, not hardcoded.** Tracker CLI, checks, default branch, label, and `tools.graphify` all come from `.yaah/config.yml` — never assume a stack or `gh`-vs-`glab`.
 - **No user prompts between Phases 2–5.** Surface only a true hard blocker, then stop.
 - **No round cap.** The review loop ends only when the reviewer approves. A failed check is NOT a blocker — re-spawn the builder with tighter guidance.
 - **Stay in `$WORKTREE`.** You `cd` in at Phase 0; address files relative to it or as `$WORKTREE/…`. NEVER write to the main checkout — that collides with parallel runs.
