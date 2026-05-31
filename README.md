@@ -95,15 +95,18 @@ hard blocker instead of being forced.
 
 ## What's in the box
 
-| Skill | Role | Standalone |
-|-------|------|------------|
-| **setup-yaah** | One-time interactive setup. Detects stack + tracker + default branch, confirms with you, writes `.yaah/config.yml`. Bundles `scm-commands.md` (the GitHub-vs-GitLab command recipes forge uses). | run once |
-| **forge** | The orchestrator. `SKILL.md` is the spine; `PLAYBOOK.md` holds per-phase mechanics + subagent prompt templates; `scripts/forge-worktree.sh` creates/removes isolated worktrees and auto-detects the default branch. | — |
-| **grill-with-docs** | Phase 1 — interrogates the plan against your domain model, sharpens terminology, updates `CONTEXT.md` / ADRs inline. | ✅ |
-| **to-issues** | Phase 2 — breaks the locked plan into tracer-bullet vertical slices and files them in dependency order. | ✅ |
-| **handoff** | Phase 3 — compacts context into a tight brief for the implementing subagent. | ✅ |
-| **tdd** | Phase 3 — red→green→refactor, behavior tested through public interfaces. Bundles `tests.md`, `mocking.md`, `deep-modules.md`, `interface-design.md`, `refactoring.md`. | ✅ |
-| **thermo-nuclear-code-quality-review** | Phase 4 — an unusually strict maintainability review hunting "code-judo" simplifications, giant files, spaghetti growth. | ✅ |
+| Skill | Role | Standalone | Source |
+|-------|------|------------|--------|
+| **setup-yaah** | One-time interactive setup. Detects stack + tracker + default branch, confirms with you, writes `.yaah/config.yml`. Bundles `scm-commands.md` (the GitHub-vs-GitLab command recipes forge uses). | run once | yaah |
+| **forge** | The orchestrator. `SKILL.md` is the spine; `PLAYBOOK.md` holds per-phase mechanics + subagent prompt templates; `scripts/forge-worktree.sh` creates/removes isolated worktrees and auto-detects the default branch. | — | yaah |
+| **grill-with-docs** | Phase 1 — interrogates the plan against your domain model, sharpens terminology, updates `CONTEXT.md` / ADRs inline. | ✅ | [mattpocock](#credits) |
+| **to-issues** | Phase 2 — breaks the locked plan into tracer-bullet vertical slices and files them in dependency order. | ✅ | [mattpocock](#credits) |
+| **handoff** | Phase 3 — compacts context into a tight brief for the implementing subagent. | ✅ | [mattpocock](#credits) |
+| **tdd** | Phase 3 — red→green→refactor, behavior tested through public interfaces. Bundles `tests.md`, `mocking.md`, `deep-modules.md`, `interface-design.md`, `refactoring.md`. | ✅ | [mattpocock](#credits) |
+| **thermo-nuclear-code-quality-review** | Phase 4 — an unusually strict maintainability review hunting "code-judo" simplifications, giant files, spaghetti growth. | ✅ | [cursor](#credits) |
+
+Only **forge** and **setup-yaah** are original to yaah. The five sub-skills are
+third-party work — see [Credits](#credits).
 
 ---
 
@@ -141,6 +144,24 @@ No language/runtime is required by yaah itself — your `checks` commands decide
 
 ---
 
+## Credits
+
+yaah stands on the shoulders of excellent third-party skills. The orchestration
+(`forge`) and the setup interview (`setup-yaah`) are original; the five sub-skills it
+chains are not, and full credit goes to their authors:
+
+- **[mattpocock/skills](https://github.com/mattpocock/skills)** — `grill-with-docs`,
+  `to-issues`, `handoff`, and `tdd` come from Matt Pocock's skills collection.
+- **[cursor/plugins](https://github.com/cursor/plugins/blob/main/cursor-team-kit/skills/thermo-nuclear-code-quality-review/SKILL.md)**
+  — `thermo-nuclear-code-quality-review` comes from the Cursor team kit.
+
+These skills are vendored here so the pipeline works out of the box; consult the
+upstream repos for canonical versions, updates, and their own licenses. If you are an
+author and would prefer a different attribution or a submodule reference instead of a
+vendored copy, please open an issue.
+
 ## License
 
-[MIT](LICENSE) © Hamza Sahin
+[MIT](LICENSE) © Hamza Sahin — applies to the original yaah work (`forge`,
+`setup-yaah`, README, `install.sh`). Vendored sub-skills remain under their upstream
+licenses; see [Credits](#credits).
