@@ -99,9 +99,11 @@ the config. `/forge` then runs the full pipeline.
 Phase 0  CONFIG+WT read .yaah/config.yml, create an isolated worktree off the
                    latest default branch, cd in   (runs /setup-yaah if no config)
 Phase 1  GRILL     /grill-with-docs        interactive — lock requirements + docs
-Phase 2  ISSUE     /to-issues              create issue(s) on GitHub or GitLab
+Phase 2  PRD+ISSUES /to-prd → /to-issues   publish a PRD parent issue, then child tasks
+                                           attached to it (task-list + Parent refs)
 Phase 3  BUILD     /handoff → implementer (claude | cursor | codex) → /tdd
-                                           implement test-first, open a PR/MR, link the issue
+                                           work the child issues one-by-one in ONE PR/MR —
+                                           one commit per issue, check its PRD box, link the commit
 Phase 4  REVIEW    /thermo-nuclear-code-quality-review
                                            review → fix loop until clean (no cap)
 Phase 5  RECAP     summarize the run
@@ -128,12 +130,13 @@ hard blocker instead of being forced.
 | **setup-yaah** | One-time interactive setup. Detects stack + tracker + default branch, confirms with you, offers to install the token-efficiency tools, writes `.yaah/config.yml`. Bundles `scm-commands.md` (the GitHub-vs-GitLab command recipes) and `efficiency-tools.md` (graphify/rtk/caveman install + wiring). | run once | yaah |
 | **forge** | The orchestrator. `SKILL.md` is the spine; `PLAYBOOK.md` holds per-phase mechanics + subagent prompt templates; `scripts/forge-worktree.sh` creates/removes isolated worktrees; `scripts/forge-implement.sh` runs the cursor/codex CLI engines (prompt passed as a file, safe argv, parsed receipt). | — | yaah |
 | **grill-with-docs** | Phase 1 — interrogates the plan against your domain model, sharpens terminology, updates `CONTEXT.md` / ADRs inline. | ✅ | [mattpocock](#credits) |
-| **to-issues** | Phase 2 — breaks the locked plan into tracer-bullet vertical slices and files them in dependency order. | ✅ | [mattpocock](#credits) |
+| **to-prd** | Phase 2 — synthesizes the grilled context into a PRD and files it as the parent issue. | ✅ | [mattpocock](#credits) |
+| **to-issues** | Phase 2 — breaks the PRD into tracer-bullet vertical slices and files them as child issues (Parent ref + PRD task-list) in dependency order. | ✅ | [mattpocock](#credits) |
 | **handoff** | Phase 3 — compacts context into a tight brief for the implementing subagent. | ✅ | [mattpocock](#credits) |
 | **tdd** | Phase 3 — red→green→refactor, behavior tested through public interfaces. Bundles `tests.md`, `mocking.md`, `deep-modules.md`, `interface-design.md`, `refactoring.md`. | ✅ | [mattpocock](#credits) |
 | **thermo-nuclear-code-quality-review** | Phase 4 — an unusually strict maintainability review hunting "code-judo" simplifications, giant files, spaghetti growth. | ✅ | [cursor](#credits) |
 
-Only **forge** and **setup-yaah** are original to yaah. The five sub-skills are
+Only **forge** and **setup-yaah** are original to yaah. The six sub-skills are
 third-party work — see [Credits](#credits).
 
 ---
@@ -223,12 +226,12 @@ No language/runtime is required by yaah itself — your `checks` commands decide
 
 yaah only exists because the community shared its work first. 🙏 We wrote the glue —
 the orchestration (`forge`) and the setup interview (`setup-yaah`) are ours — but the
-five skills it chains together come from people who figured the hard parts out before
+six skills it chains together come from people who figured the hard parts out before
 us. Huge thanks to them:
 
 - **[mattpocock/skills](https://github.com/mattpocock/skills)** — `grill-with-docs`,
-  `to-issues`, `handoff`, and `tdd` are from Matt Pocock's lovely skills collection. Go
-  star his repo.
+  `to-prd`, `to-issues`, `handoff`, and `tdd` are from Matt Pocock's lovely skills
+  collection. Go star his repo.
 - **[cursor/plugins](https://github.com/cursor/plugins/blob/main/cursor-team-kit/skills/thermo-nuclear-code-quality-review/SKILL.md)**
   — `thermo-nuclear-code-quality-review` comes from the Cursor team kit. Thanks, Cursor
   folks.

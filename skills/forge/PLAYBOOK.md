@@ -19,48 +19,65 @@ Per-phase mechanics, the subagent prompt templates, and edge cases. SKILL.md is 
 - **Exit criterion:** every branch resolved and the user has nothing left to push back on ("good" / "ship it" / "that's it" = locked).
 - **Carry forward:** a 3–6 bullet locked-requirements summary + the list of doc files touched. Feeds Phase 2 and the handoff.
 
-## Phase 2 — ISSUE
+## Phase 2 — PRD + ISSUES
 
-- Call the Skill tool with `to-issues` on the locked plan.
-- It drafts **tracer-bullet vertical slices** (each cuts through all layers — data/API/UI/tests — demoable on its own), marks each AFK/HITL, and publishes in dependency order via the tracker CLI (`gh issue create` / `glab issue create`) with the configured `issue_label`.
-- **Capture** every created issue's number + URL into state.
-- **Multiple slices:** process them through Phases 3–6 **one at a time in dependency order** (blockers first). Each slice gets its own worktree, branch, PR/MR, and merge gate; `round`, `worktree`, `branch`, and `pr` are per slice. Re-print the state block when you switch slices. A dependent slice that needs an earlier slice's unmerged code should base its worktree on the blocker's branch: `forge-worktree.sh create <slug> <blocker-branch>` (the script accepts a base-ref), or merge the blocker first.
-- Do not modify or close any parent issue.
+Two sub-skills, in order, both **non-interactive**: Phase 1 already locked the requirements, so do NOT re-quiz the user — their built-in "check the seams" (`to-prd`) and "quiz the user" (`to-issues`) steps are satisfied by the grilled `CONTEXT.md` / ADRs. Decide from those and proceed.
+
+1. **`/to-prd`** — Call the Skill tool with `to-prd` on the locked plan. It synthesizes `CONTEXT.md` + the ADRs into a PRD (problem, solution, user stories, implementation + testing decisions, out-of-scope) and **publishes it as the parent issue** via the tracker CLI (`gh issue create` / `glab issue create`) with the configured `issue_label`. **Capture the PRD's number + URL into state (`prd`).**
+2. **`/to-issues`** — Then call the Skill tool with `to-issues`, passing the PRD. It drafts **tracer-bullet vertical slices** (each cuts through all layers — data/API/UI/tests — demoable on its own), marks each AFK/HITL, and publishes them as **child issues of the PRD**:
+   - Each child issue's `Parent` field references the PRD (`#<prd>`).
+   - The **PRD body gets a task-list** of the children — one `- [ ] #<child>` per line — so progress is visible on the parent. Write it by editing the PRD body once the children exist (`gh issue edit <prd> --body …` / `glab issue update <prd> --description …`).
+   - Publish in dependency order (blockers first) with the configured `issue_label`.
+   - **Capture every child issue's number + URL into state (`issues`), in dependency order.**
+
+**One PRD ⇒ one PR.** Unlike the old per-slice model, every child issue is implemented as a single commit on a **single branch / single PR** (Phase 3), and the whole PRD has **one merge gate** (Phase 6). `worktree`, `branch`, `pr`, and `round` are per PRD, not per child. Do not close the PRD or children by hand — the Phase 6 merge auto-closes them via the PR/MR's `Closes` refs; you only write/check the PRD task-list.
 
 ## Phase 3 — BUILD (handoff → implementer → tdd)
 
-1. Call the Skill tool with `handoff`, scoped to "prompt a fresh agent to implement issue #N via TDD inside `$WORKTREE`." The doc **references the issue by URL** + the grilled decisions/doc changes — it does not restate the issue body.
+1. Call the Skill tool with `handoff`, scoped to "prompt a fresh agent to implement the PRD's child issues one-by-one via TDD inside `$WORKTREE`." The doc **references the PRD + every child issue by URL** (in dependency order) + the grilled decisions/doc changes — it does not restate the issue bodies.
 2. Deliver the build prompt to the **configured implementer engine** (`implementer.engine`, default `claude`) — exact mechanics in **Implementer engines** below. The prompt = the handoff doc + the build contract below, with `<CHECKS>` and `<CLI>` filled from config (and the `/tdd` line adapted per engine). For a CLI engine (`cursor`/`codex`) write that prompt to a `.md` file and run `forge-implement.sh` — **never hand-build the CLI command**.
 3. Read the returned receipt; write `pr` (and, for cursor, the session id) into state. A **missing PR/MR after a retry** is a hard blocker. A **failing check is NOT** a blocker — re-run the implementer with tightened guidance (the loop has no cap); only a genuinely unrecoverable failure stops the run.
 
 ### Subagent build prompt (template)
 
 ```
-You are implementing ONE issue end-to-end with TDD, inside an existing git worktree.
+You are implementing a whole PRD end-to-end with TDD, inside an existing git worktree.
 Do NOT ask questions — requirements are locked; decide and proceed.
 
 Worktree (your cwd for everything): <$WORKTREE>
-Branch (already created, use it): <$BRANCH>
-Issue: #<N> — <url>
+Branch (already created, use it; NEVER create another): <$BRANCH>
+PRD (parent issue): #<P> — <url>
+Child issues to implement, IN THIS ORDER (dependency order): #<a> <url>, #<b> <url>, #<c> <url>
 Tracker CLI: <CLI>            (gh = GitHub, glab = GitLab)
 Checks to run: <CHECKS>       (ordered; each MUST exit non-zero on failure)
 Locked decisions / handoff: <paste the handoff doc>
 
 Do this:
 1. cd into the worktree and confirm you are on <$BRANCH> (git rev-parse --abbrev-ref HEAD).
-2. Invoke the /tdd skill and follow it strictly: red → green → refactor, one behavior
-   at a time, vertical tracer bullets, behavior tested through public interfaces
-   (see tdd/tests.md, tdd/mocking.md). Do NOT create a new branch.
-3. Run the configured checks for what you touched (the <CHECKS> list, in order).
-   All must pass.
-4. Commit (Conventional Commits), push <$BRANCH>, open a PR/MR whose body contains
-   "Closes #<N>":
-     gh:   gh pr create --base <DEFAULT_BRANCH> --head <$BRANCH> --title T --body "Closes #<N>"
-     glab: glab mr create --source-branch <$BRANCH> --target-branch <DEFAULT_BRANCH> --title T --description "Closes #<N>"
-   Comment the PR/MR URL on issue #<N> (gh issue comment / glab issue note).
-5. Return ONLY this receipt (no prose):
+2. Work the child issues IN THE GIVEN ORDER. For EACH child:
+   a. Invoke the /tdd skill and follow it strictly: red → green → refactor, one behavior
+      at a time, vertical tracer bullets, behavior tested through public interfaces
+      (see tdd/tests.md, tdd/mocking.md). Do NOT create a new branch.
+   b. Run the configured checks for what you touched (the <CHECKS> list, in order). All must pass.
+   c. Land EXACTLY ONE commit for this child — squash your red/green/refactor work into it:
+      Conventional Commits subject + a body line "Closes #<child>". Push <$BRANCH>.
+   d. On the FIRST commit, immediately open the ONE PR/MR (step 3). Later commits: just push to it.
+   e. Flip this child's PRD task-list box "- [ ] #<child>" → "- [x] #<child>":
+        gh:   gh issue edit <P> --body "<updated PRD body>"
+        glab: glab issue update <P> --description "<updated PRD body>"
+   f. Backlink on the child issue — comment the commit SHA + the PR/MR URL:
+        gh:   gh issue comment <child> --body "Done in <sha> — PR #<M> <url>"
+        glab: glab issue note <child> --message "Done in <sha> — MR !<M> <url>"
+3. The single PR/MR (opened at the first commit) Closes the PRD AND every child issue:
+     gh:   gh pr create --base <DEFAULT_BRANCH> --head <$BRANCH> --title T \
+             --body $'Closes #<P>\nCloses #<a>\nCloses #<b>\nCloses #<c>'
+     glab: glab mr create --source-branch <$BRANCH> --target-branch <DEFAULT_BRANCH> --title T \
+             --description $'Closes #<P>\nCloses #<a>\nCloses #<b>\nCloses #<c>'
+4. Return ONLY this receipt (no prose):
    branch:  <name>
    pr:      #<M> <url>
+   prd:     #<P> — boxes checked: <a,b,c>
+   commits: <one line per child: #<child> → <sha>>
    checks:  <each command run + pass/fail>
    summary: <2–4 lines: what you built and any caveat>
 ```
@@ -106,7 +123,7 @@ ENGINE=… MODE=… EXIT=… STATUS=ok|fail SESSION=… RECEIPT_FILE=… STDOUT_
 - **cursor:** `cursor-agent --version`; `[ -n "$CURSOR_API_KEY" ] || cursor-agent status`. Install: `curl https://cursor.com/install -fsS | bash`; auth: `cursor-agent login`.
 - **codex:** `codex --version`; `codex login status`. Install: `npm i -g @openai/codex`; auth: `codex login` (or `OPENAI_API_KEY`).
 
-*Prompt adaptation (cursor & codex).* Neither CLI has Claude Code skills, so in the prompt file replace the build contract's step 2 — "Invoke the /tdd skill…" — with this inline directive:
+*Prompt adaptation (cursor & codex).* Neither CLI has Claude Code skills, so in the prompt file replace the build contract's TDD directive (step 2a — "Invoke the /tdd skill…") — with this inline directive (the per-child loop, one-commit-per-child, task-list, and backlink steps stay verbatim):
 > Work strictly test-first in **red → green → refactor** cycles, one behavior at a time. Build **vertical tracer bullets** (a thin slice through every layer), not horizontal layers. Test behavior through **public interfaces**, never implementation details; mock only true external boundaries (network, clock, filesystem), never internal collaborators. Refactor only on green. Do NOT create a new branch.
 
 (Optional alternative: write those standing rules to `$WORKTREE/AGENTS.md` before the run — both `cursor-agent` and `codex` auto-read `AGENTS.md` at the workspace root — and keep the prompt to the actionable task. Inlining is the simpler, self-contained default.)
@@ -119,7 +136,7 @@ ENGINE=… MODE=… EXIT=… STATUS=ok|fail SESSION=… RECEIPT_FILE=… STDOUT_
 
 - **Invoke `/thermo-nuclear-code-quality-review`** (Skill tool) against the PR/MR branch diff. You orchestrate; it runs its full rubric.
 - Apply its bar: code-judo simplifications, the ~1000-line file smell, no scattered special-case branching, abstractions earning their keep, logic in the canonical layer. Prefer few high-conviction findings over many cosmetic nits.
-- **Post findings as inline review comments** on the diff (GitHub) or **MR discussions** (GitLab) and **capture each comment/discussion ID** — exact commands in `../setup-yaah/scm-commands.md`. Add a one-line status comment on the issue linking the PR/MR. Then set verdict:
+- **Post findings as inline review comments** on the diff (GitHub) or **MR discussions** (GitLab) and **capture each comment/discussion ID** — exact commands in `../setup-yaah/scm-commands.md`. Add a one-line status comment on the PRD linking the PR/MR. Then set verdict:
   - **approved** — no presumptive blockers remain → Phase 5.
   - **changes-requested** — re-run the **configured implementer** with the fix prompt below, passing the comment IDs (claude: a new Agent call; cursor: `--resume` the saved session — see *Engine dispatch (fix round)* after the template). It works in the **same `$WORKTREE` / `$BRANCH`** and **replies on each comment thread** (`gh api …/replies` / `glab api …/discussions/{id}/notes`). Then re-run this phase, `round += 1`.
 - **No cap.** Repeat until approved. Do not escalate to the user; do not give up on ordinary findings.
@@ -127,8 +144,11 @@ ENGINE=… MODE=… EXIT=… STATUS=ok|fail SESSION=… RECEIPT_FILE=… STDOUT_
 ### Subagent fix prompt (template)
 
 ```
-Address this code review on PR/MR #<M> (branch <$BRANCH>, worktree <$WORKTREE>) for issue #<N>.
+Address this code review on PR/MR #<M> (branch <$BRANCH>, worktree <$WORKTREE>) for PRD #<P>.
 Tracker CLI: <CLI>.  Use /tdd: add/adjust tests for any behavior change; keep red → green → refactor.
+Review fixes are normal commits on <$BRANCH> (the one-commit-per-child rule governs the
+initial build, not review fixes); when a fix maps cleanly to one child, reference it in the
+commit body. Do NOT create a new branch.
 
 Findings to resolve (each with its comment/discussion id):
 <paste the review findings + comment IDs>
@@ -175,7 +195,7 @@ Print, in this order:
   3. If `config.tools.graphify` is true (or the legacy top-level `graphify: true`), run `graphify update .` from the worktree root and stage + commit any graph change (Conventional Commit). If graphify is unavailable, note it in the recap rather than failing. (Skip this step entirely when graphify is off.)
   4. `git push --force-with-lease` (the rebase rewrote history, so a plain push is rejected; `--force-with-lease` refuses to clobber if someone else pushed to the PR/MR meanwhile — if rejected, re-fetch and reconcile, never plain `--force`).
   5. **Re-run the Phase 4 review loop once as verification.** The rebase merged new base code into the diff's context, so re-review to confirm nothing broke. If it requests changes, run normal no-cap fix rounds (fix subagent on the same branch); after any code change re-run graphify (if enabled) + commit + push. Loop until the reviewer approves again.
-  6. Merge the PR/MR via the tracker CLI (`gh pr merge` / `glab mr merge`, per repo convention).
+  6. Merge the single PR/MR via the tracker CLI (`gh pr merge` / `glab mr merge`, per repo convention). Its `Closes` refs auto-close the PRD parent and every child issue on merge — confirm they closed; if the tracker did not auto-close one, close it by hand referencing the merge commit.
   7. `cd` back to the main repo clone (you cannot remove a worktree that is your cwd), then `git checkout <default-branch> && git pull` so the main clone reflects the merge.
   8. Tear the worktree down: `bash <forge-skill-dir>/scripts/forge-worktree.sh remove "$WORKTREE"` (it removes the worktree, deletes the `feat/*` branch, and prints `REMOVED=<path>`).
 
@@ -190,4 +210,6 @@ Print, in this order:
 - **CLI engine run hangs or times out:** the timeout wrapper kills it; treat that round as failed and re-run (same as a failed check — no cap). Only a run that hangs on *every* retry, or exits non-zero with an unrecoverable error, stops the run.
 - **Invalid model:** the CLI exits non-zero. Leave `implementer.model` blank to use the engine's default, or list valid names — cursor: `cursor-agent --list-models`; codex: `~/.codex/config.toml` `model =` or `-m`. Note model names are engine-specific (a cursor model id like `composer-2.5` is NOT a valid codex model and vice-versa) — reset `model` when switching engines.
 - **User interrupts mid-run:** keep the state block current so the run resumes from the last completed phase; the worktree persists.
-- **Multiple issues from Phase 2:** worktree, branch, PR/MR, and `round` are **per issue**; reset `round` to 0 and create a fresh worktree when you start a new slice.
+- **Many child issues from Phase 2:** they are **commits in ONE PR**, not separate PRs — one worktree, one branch, one PR/MR, one `round` counter, and one merge gate for the whole PRD. Implement them in dependency order, one commit each. If a later child depends on an earlier child's code, that is fine — it is already on the same branch.
+- **A child issue turns out unbuildable / should be dropped mid-build:** leave its PRD box unchecked, do NOT put its `Closes #<child>` in the PR body (so the merge won't auto-close it), note it in the receipt + recap, and keep going with the rest. Never block the whole PRD on one child — surface it at recap.
+- **`to-prd` or `to-issues` tries to quiz the user:** it must not — Phase 1 locked everything. Feed it the grilled `CONTEXT.md`/ADRs and the locked-requirements summary so it decides autonomously; only a true hard blocker stops the run.
