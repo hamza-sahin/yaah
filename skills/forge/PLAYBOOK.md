@@ -30,7 +30,7 @@ Two sub-skills, in order, both **non-interactive**: Phase 1 already locked the r
    - Publish in dependency order (blockers first) with the configured `issue_label`.
    - **Capture every child issue's number + URL into state (`issues`), in dependency order.**
 
-**One PRD ⇒ one PR.** Unlike the old per-slice model, every child issue is implemented as a single commit on a **single branch / single PR** (Phase 3), and the whole PRD has **one merge gate** (Phase 6). `worktree`, `branch`, `pr`, and `round` are per PRD, not per child. Do not close the PRD or children by hand — the Phase 6 merge auto-closes them via the PR/MR's `Closes` refs; you only write/check the PRD task-list.
+**One PRD ⇒ one PR.** Unlike the old per-slice model, every child issue is implemented as a single commit on a **single branch / single PR** (Phase 3), and the whole PRD has **one merge gate** (Phase 6). `worktree`, `branch`, `pr`, and `round` are per PRD, not per child. Each **child** issue is closed by the implementer the moment its commit lands (Phase 3, step 2g) — don't wait for the merge, because a `Closes #` ref only fires once the branch reaches the default branch. The **PRD parent** is the exception: leave it open and let the Phase 6 merge auto-close it via the PR/MR's `Closes #<prd>` ref. Keep the PRD task-list current as each child closes.
 
 ## Phase 3 — BUILD (handoff → implementer → tdd)
 
@@ -68,6 +68,12 @@ Do this:
    f. Backlink on the child issue — comment the commit SHA + the PR/MR URL:
         gh:   gh issue comment <child> --body "Done in <sha> — PR #<M> <url>"
         glab: glab issue note <child> --message "Done in <sha> — MR !<M> <url>"
+   g. CLOSE this child issue NOW — do NOT wait for the merge. The "Closes #<child>" in the
+      commit/PR body only fires when the branch reaches the default branch (Phase 6 merge),
+      so close it explicitly the moment its commit lands so progress is visible in the tracker:
+        gh:   gh issue close <child> --reason completed
+        glab: glab issue close <child>
+      (Leave the PRD parent #<P> OPEN — the merge's "Closes #<P>" closes it at the end.)
 3. The single PR/MR (opened at the first commit) Closes the PRD AND every child issue:
      gh:   gh pr create --base <DEFAULT_BRANCH> --head <$BRANCH> --title T \
              --body $'Closes #<P>\nCloses #<a>\nCloses #<b>\nCloses #<c>'
@@ -77,6 +83,7 @@ Do this:
    branch:  <name>
    pr:      #<M> <url>
    prd:     #<P> — boxes checked: <a,b,c>
+   closed:  <child issues closed as their commits landed: a,b,c>
    commits: <one line per child: #<child> → <sha>>
    checks:  <each command run + pass/fail>
    summary: <2–4 lines: what you built and any caveat>
@@ -84,11 +91,58 @@ Do this:
 
 ### Implementer engines
 
-The build prompt above and the fix prompt in Phase 4 are **engine-agnostic** — the same text runs under any engine. `implementer.engine` is `claude` (default), `cursor`, or `codex`; `implementer.model` (cursor/codex) optionally overrides the model. A missing block ⇒ `claude`. Receipt format and success contract are identical; only *how* the prompt is delivered differs.
+The build prompt above and the fix prompt in Phase 4 are **engine-agnostic** — the same text runs under any engine. `implementer.engine` is `claude` (default), `cursor`, or `codex`. `implementer.model` optionally overrides the model: for **claude** it is an Agent-tool alias (`sonnet`/`opus`/`haiku`, blank = inherit the session model); for **cursor/codex** it is that engine's own id. Two further keys, `implementer.agent` (default `general-purpose`) and `implementer.workflow` (default `false`), apply to the **claude** engine only. A missing block ⇒ `claude` / `general-purpose` / `workflow:false`. Receipt format and success contract are identical across engines; only *how* the prompt is delivered differs.
 
 #### `claude` (default) — a Claude Code subagent
 
-Spawn exactly **one** subagent via the Agent tool, `subagent_type: general-purpose` (it needs Bash + the tracker CLI + edit tools), cwd `$WORKTREE`, prompt = the build prompt (Phase 3) or the fix prompt (Phase 4). The subagent's final message **is** the receipt. Fix rounds are a fresh Agent call with the fix prompt.
+Invoke the subagent via the Agent tool, **honoring the config**:
+- `subagent_type` = `implementer.agent` (default `general-purpose`). It needs Bash + the tracker CLI + edit tools; a read-only type (e.g. `Explore`) cannot commit/close issues — if `implementer.agent` lacks those tools, that is a hard blocker, surface it.
+- `model` = `implementer.model` when set (an alias: `sonnet`/`opus`/`haiku`); **omit the param when blank** so the subagent inherits the session model. Pass the same model on every build and fix call.
+- `cwd` = `$WORKTREE`; `prompt` = the build prompt (Phase 3) or the fix prompt (Phase 4). The subagent's final message **is** the receipt.
+
+**Sequential (`implementer.workflow: false`, the default).** Spawn exactly **one** subagent with the build prompt; it works the children one-by-one as the build contract describes. Fix rounds (Phase 4) are a fresh Agent call with the fix prompt.
+
+**Parallel (`implementer.workflow: true`) — branch-per-issue via the Workflow tool.** Setting this `true` is the user's opt-in for forge to run a workflow. This is the **only** mode that changes forge's git topology: `$BRANCH` (cut in Phase 0 off the default branch) becomes the **PRD integration branch**; each child issue gets its **own issue branch + own worktree + own PR into the PRD branch**; and the single user gate is still the Phase 6 merge of the PRD branch into the default branch. Children are **built in parallel** on their own branches; their PRs are then **squash-merged into `$BRANCH` one at a time** (a serial merge barrier — see below — because GitHub won't lock an unprotected branch against concurrent merges). (Real branches + PRs, so no cherry-pick / detached-HEAD / worktree-bookkeeping: the Workflow tool's `isolation:'worktree'` gives each agent its own checkout and auto-cleans it, and every commit lives on the pushed issue branch, then on `$BRANCH` after merge.)
+
+```
+default
+  └─ $BRANCH  (PRD integration branch — pushed to origin early)
+       ├─ $BRANCH--issue-<a>  ─PR(Closes #a)─┐
+       ├─ $BRANCH--issue-<b>  ─PR(Closes #b)─┤ built in PARALLEL; PRs
+       └─ $BRANCH--issue-<c>  ─PR(Closes #c)─┘ then squash-merged ONE AT A TIME ▶ $BRANCH
+  ◀── Phase 6: ONE PR  $BRANCH → default   (the only user gate; body `Closes #<prd>`)
+```
+
+Split the work: **build in parallel, merge serially.** The expensive part (TDD + checks per child) fans out; the cheap-but-shared part (merging into `$BRANCH`, closing issues, editing the PRD body) is serialized so nothing races.
+
+- **PRD integration branch.** Push `$BRANCH` to origin first (`git push -u origin $BRANCH`) so issue-PRs can target it. **Open the Phase 6 gate PR (`$BRANCH → default`, body `Closes #<prd>` only — the children get closed by hand, so don't list them) once the first child has merged into `$BRANCH`** (a PR on an empty `$BRANCH` errors with "no commits between"). The orchestrator opens it — never a build agent. It is the only user approval and is unchanged; record it as state `pr`.
+- **Issue branch names derive from `$BRANCH`.** `$BRANCH` is `feat/<slug>-<unique>` (from `forge-worktree.sh`); name each child branch `${BRANCH}--issue-<child>` (double-dash suffix — NOT `${BRANCH}/<child>`, which is an invalid nested ref because `$BRANCH` already exists). There is no separate `<prd>` token in the branch name.
+- **Dependency layers, not a free-for-all.** Group the children into topological layers from the Phase 2 dependency order: a layer holds children that are mutually independent; each branches off the **current `origin/$BRANCH` tip**, and a dependent child waits until its blockers have **merged and pushed** to `origin/$BRANCH` (so its branch already contains their code). The merge barrier (below) confirms a layer's merges are pushed before the next layer's agents fan out. **Only parallelize children you know are independent — unclear DAG ⇒ one child per layer (fully sequential). Never run a child alongside its blocker.**
+- **Build agents (fan-out, per layer)** — one `agent()` per child, `isolation: 'worktree'`, `agentType: <implementer.agent>`, `model: <implementer.model or omit>`. Each agent, in its own isolated worktree, does the heavy lifting only:
+  1. `git fetch origin` and create its issue branch off the latest PRD tip: `git checkout -b ${BRANCH}--issue-<child> origin/$BRANCH`. (A brand-new branch — no "already checked out in another worktree" clash; that only bites `$BRANCH` itself, so **agents never check out `$BRANCH` directly**.)
+  2. Run the build contract's TDD loop for its **single** child; run the configured checks (all green).
+  3. Commit, **push the issue branch**, open a PR **into `$BRANCH`** (`--base $BRANCH`, body `Closes #<child>`).
+  4. Return `{child, prNumber, branch, checks}`. It does **NOT** merge, close the issue, or touch the PRD body — all shared-state writes belong to the merge barrier.
+- **Merge barrier (serialized, per layer) — this is the correctness keystone.** GitHub does **not** lock an unprotected `$BRANCH`, so two `gh pr merge` calls firing at once can both "succeed" against a stale base and silently lose an update. So a **single** step (one `agent()`, or the orchestrator) merges the layer's PRs **one at a time, in dependency order**. For each child PR: ensure it's up to date with the freshly-fetched `origin/$BRANCH` tip (if behind, rebase the issue branch onto it, re-run checks, push) → **squash-merge** (`gh pr merge --squash --delete-branch`) → **close the issue** (`gh issue close <child> --reason completed`) → **backlink the PR URL** (the *URL*, not a SHA — the Phase 6 rebase rewrites `$BRANCH` SHAs, so a SHA backlink would dangle) → **flip that child's PRD box** by re-reading the PRD body fresh and writing it back. Because every merge, close, and PRD-body edit happens in this one serial lane, there is no lost-update, no conflicting concurrent merge, and no clobbered PRD task-list. After the layer, confirm its merges are on `origin/$BRANCH` before launching the next layer.
+- **Conflicts are resolved, not dropped.** A textual conflict during the barrier's rebase is resolved (the barrier has both sides) and re-merged. Only a child whose **checks can't go green** is unbuildable: leave its box unchecked, do not close it, note it. A failed/`null` build agent **and any children that depend on it** are deferred — retry the blocker (no cap) and only run its dependents once it has merged; never launch a dependent whose blocker never landed.
+- **Fix rounds stay sequential.** Phase 4 reviews the aggregate `$BRANCH → default` diff and runs fixes as a **single** subagent on `$BRANCH` (configured `agent`/`model`) — not a fan-out. Internal issue-PRs are not separately reviewed; fix-round commits land directly on `$BRANCH` and do not reopen the already-closed child issues.
+- **GitLab (`cli: glab`):** identical shape — the issue branch's MR targets `$BRANCH` (`glab mr create --target-branch $BRANCH --source-branch ${BRANCH}--issue-<child> --description 'Closes #<child>'`), squash-merge with `glab mr merge --squash --remove-source-branch`, close with `glab issue close <child>`. The `$BRANCH → default` MR is the user gate. Map every `gh` above to its `glab` form per `setup-yaah/scm-commands.md`.
+
+Skeleton (the orchestrator authors the actual script; `LAYERS` is the topological grouping above — an undeterminable DAG ⇒ `[[a],[b],[c]]`, one child per layer. Build fans out; the merge barrier serializes all shared writes):
+```js
+export const meta = { name: 'forge-build', description: 'Build PRD children on per-issue branches in parallel, merge each into the PRD branch serially', phases: [{title:'Build'},{title:'Merge'}] }
+const merged = []
+for (const layer of args.LAYERS) {                 // layers sequential; children within a layer parallel
+  const built = await parallel(layer.map(child => () =>
+    agent(buildPrompt(child), { phase:'Build', isolation:'worktree', agentType: args.agent || 'general-purpose', ...(args.model?{model:args.model}:{}), schema: BUILD_RECEIPT })
+  ))
+  const ok = built.filter(Boolean)                 // each ok child: own branch built + PR opened into $BRANCH
+  // ONE serial barrier: rebase-if-behind → squash-merge → close issue → backlink PR URL → flip PRD box, per child in dep order
+  const done = await agent(mergeBarrierPrompt(ok), { phase:'Merge', agentType: args.agent || 'general-purpose', ...(args.model?{model:args.model}:{}), schema: MERGE_RECEIPT })
+  merged.push(...done.children)                    // failed/null build agents + their dependents are deferred (retry, no cap)
+}
+return assembleReceipt(merged)
+```
 
 #### `cursor` / `codex` — CLI engines, invoked via `forge-implement.sh`
 
@@ -123,7 +177,7 @@ ENGINE=… MODE=… EXIT=… STATUS=ok|fail SESSION=… RECEIPT_FILE=… STDOUT_
 - **cursor:** `cursor-agent --version`; `[ -n "$CURSOR_API_KEY" ] || cursor-agent status`. Install: `curl https://cursor.com/install -fsS | bash`; auth: `cursor-agent login`.
 - **codex:** `codex --version`; `codex login status`. Install: `npm i -g @openai/codex`; auth: `codex login` (or `OPENAI_API_KEY`).
 
-*Prompt adaptation (cursor & codex).* Neither CLI has Claude Code skills, so in the prompt file replace the build contract's TDD directive (step 2a — "Invoke the /tdd skill…") — with this inline directive (the per-child loop, one-commit-per-child, task-list, and backlink steps stay verbatim):
+*Prompt adaptation (cursor & codex).* Neither CLI has Claude Code skills, so in the prompt file replace the build contract's TDD directive (step 2a — "Invoke the /tdd skill…") — with this inline directive (the per-child loop, one-commit-per-child, task-list, backlink, and close-the-child steps stay verbatim):
 > Work strictly test-first in **red → green → refactor** cycles, one behavior at a time. Build **vertical tracer bullets** (a thin slice through every layer), not horizontal layers. Test behavior through **public interfaces**, never implementation details; mock only true external boundaries (network, clock, filesystem), never internal collaborators. Refactor only on green. Do NOT create a new branch.
 
 (Optional alternative: write those standing rules to `$WORKTREE/AGENTS.md` before the run — both `cursor-agent` and `codex` auto-read `AGENTS.md` at the workspace root — and keep the prompt to the actionable task. Inlining is the simpler, self-contained default.)
@@ -166,7 +220,7 @@ Do this:
 ```
 
 **Engine dispatch (fix round).** Same engines as Phase 3's **Implementer engines**, resuming context:
-- `claude`: a fresh Agent call (`general-purpose`), prompt = the fix prompt above. (Pass the build summary in the prompt — a new subagent has no memory of the build.)
+- `claude`: a fresh Agent call using the configured `implementer.agent` (default `general-purpose`) and `implementer.model` (alias when set, else omit), prompt = the fix prompt above. (Pass the build summary in the prompt — a new subagent has no memory of the build.) Fix rounds are a **single** subagent on `$BRANCH` even when `implementer.workflow: true` — the workflow fan-out is for the initial build only.
 - `cursor` / `codex`: write the fix prompt to a `.md` file and re-run the script with `--mode fix` —
   ```
   bash <forge-skill-dir>/scripts/forge-implement.sh \
@@ -195,7 +249,7 @@ Print, in this order:
   3. If `config.tools.graphify` is true (or the legacy top-level `graphify: true`), run `graphify update .` from the worktree root and stage + commit any graph change (Conventional Commit). If graphify is unavailable, note it in the recap rather than failing. (Skip this step entirely when graphify is off.)
   4. `git push --force-with-lease` (the rebase rewrote history, so a plain push is rejected; `--force-with-lease` refuses to clobber if someone else pushed to the PR/MR meanwhile — if rejected, re-fetch and reconcile, never plain `--force`).
   5. **Re-run the Phase 4 review loop once as verification.** The rebase merged new base code into the diff's context, so re-review to confirm nothing broke. If it requests changes, run normal no-cap fix rounds (fix subagent on the same branch); after any code change re-run graphify (if enabled) + commit + push. Loop until the reviewer approves again.
-  6. Merge the single PR/MR via the tracker CLI (`gh pr merge` / `glab mr merge`, per repo convention). Its `Closes` refs auto-close the PRD parent and every child issue on merge — confirm they closed; if the tracker did not auto-close one, close it by hand referencing the merge commit.
+  6. Merge the single PR/MR via the tracker CLI (`gh pr merge` / `glab mr merge`, per repo convention). The child issues were already closed in Phase 3 as their commits landed; the merge's `Closes #<prd>` ref now auto-closes the PRD parent — confirm the parent closed and every child is still closed; if the tracker left any open, close it by hand referencing the merge commit.
   7. `cd` back to the main repo clone (you cannot remove a worktree that is your cwd), then `git checkout <default-branch> && git pull` so the main clone reflects the merge.
   8. Tear the worktree down: `bash <forge-skill-dir>/scripts/forge-worktree.sh remove "$WORKTREE"` (it removes the worktree, deletes the `feat/*` branch, and prints `REMOVED=<path>`).
 
@@ -208,8 +262,9 @@ Print, in this order:
 - **Subagent can't get a check to green:** it reports `open:` with the reason; you re-spawn with tightened guidance. A failed check is never on its own a hard blocker — the loop has no cap. Only a genuinely unrecoverable failure stops the run, and a red check NEVER reaches the merge gate (Phase 5/6 keep looping).
 - **CLI engine missing or unauthed (engine=cursor|codex):** hard blocker at Phase 0 preflight — surface the right install/auth hint and stop. cursor: `curl https://cursor.com/install -fsS | bash` / `export CURSOR_API_KEY=…` or `cursor-agent login`. codex: `npm i -g @openai/codex` / `codex login` or `OPENAI_API_KEY`. Do NOT silently fall back to the claude engine — the user chose this engine.
 - **CLI engine run hangs or times out:** the timeout wrapper kills it; treat that round as failed and re-run (same as a failed check — no cap). Only a run that hangs on *every* retry, or exits non-zero with an unrecoverable error, stops the run.
-- **Invalid model:** the CLI exits non-zero. Leave `implementer.model` blank to use the engine's default, or list valid names — cursor: `cursor-agent --list-models`; codex: `~/.codex/config.toml` `model =` or `-m`. Note model names are engine-specific (a cursor model id like `composer-2.5` is NOT a valid codex model and vice-versa) — reset `model` when switching engines.
+- **Invalid model:** for **claude**, `implementer.model` must be an Agent-tool alias — `sonnet`, `opus`, or `haiku` (NOT a cursor/codex id, NOT a full model string); anything else fails the Agent call, so leave it blank to inherit the session model. For **cursor/codex** an invalid id makes the CLI exit non-zero — leave blank for the engine's default, or list valid names (cursor: `cursor-agent --list-models`; codex: `~/.codex/config.toml` `model =` or `-m`). Model vocabularies are engine-specific (a cursor id like `composer-2.5` is not a valid codex or claude value) — reset `model` when switching engines.
 - **User interrupts mid-run:** keep the state block current so the run resumes from the last completed phase; the worktree persists.
-- **Many child issues from Phase 2:** they are **commits in ONE PR**, not separate PRs — one worktree, one branch, one PR/MR, one `round` counter, and one merge gate for the whole PRD. Implement them in dependency order, one commit each. If a later child depends on an earlier child's code, that is fine — it is already on the same branch.
-- **A child issue turns out unbuildable / should be dropped mid-build:** leave its PRD box unchecked, do NOT put its `Closes #<child>` in the PR body (so the merge won't auto-close it), note it in the receipt + recap, and keep going with the rest. Never block the whole PRD on one child — surface it at recap.
+- **Many child issues from Phase 2:** in the default sequential build they are **commits in ONE PR**, not separate PRs — one worktree, one branch, one PR/MR, one `round` counter, and one merge gate for the whole PRD. Implement them in dependency order, one commit each. If a later child depends on an earlier child's code, that is fine — it is already on the same branch. (Under `implementer.workflow: true` each child rides its own internal issue-PR into the PRD integration branch, but there is still one `round` counter and one user merge gate — the `$BRANCH → default` PR; see "Parallel" under Implementer engines.)
+- **A child issue turns out unbuildable / should be dropped mid-build:** leave its PRD box unchecked, do NOT close it (skip step 2g), and do NOT put its `Closes #<child>` in the PR body (so the merge won't auto-close it either), note it in the receipt + recap, and keep going with the rest. Never block the whole PRD on one child — surface it at recap.
 - **`to-prd` or `to-issues` tries to quiz the user:** it must not — Phase 1 locked everything. Feed it the grilled `CONTEXT.md`/ADRs and the locked-requirements summary so it decides autonomously; only a true hard blocker stops the run.
+- **Parallel build (`implementer.workflow: true`, claude only):** `$BRANCH` is a PRD integration branch; children are **built in parallel** on their own issue branches + worktrees, and their PRs are **squash-merged into `$BRANCH` one at a time by a serial merge barrier** (GitHub won't lock an unprotected branch, so concurrent merges would lose updates). The final state is identical to the sequential build — one commit per child on `$BRANCH`, one user-gate PR (`$BRANCH → default`), each issue closed by hand, each box checked. A build agent that fails its child drops to `null` (filter it out); retry it — and **defer any children that depend on it** until it lands — no cap. A merge conflict is **resolved by the barrier rebasing the issue branch** (a built+tested child is never dropped for a textual conflict); only a child whose checks can't go green is unbuildable (box unchecked, not closed, noted) — never block the PRD. If the dependency DAG can't be determined, do NOT guess independence — one child per layer (equivalent to `workflow:false`). The workflow is the **build** only; grilling, PRD/issues, review, and merge are unchanged.

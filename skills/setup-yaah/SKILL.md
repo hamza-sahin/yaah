@@ -45,7 +45,10 @@ Run once per repo. Re-run any time to change choices.
 - **Implementer engine** — which agent runs forge's Phase 3 build + Phase 4 fix loop. Default **claude** (a Claude Code subagent — no extra setup). Two CLI engines may be offered, each only when its binary is present and authed (warn and keep `claude` otherwise):
   - **cursor** — available when `cursor-agent --version` succeeds. Needs auth ahead of time (non-interactive): `CURSOR_API_KEY`, or a prior `cursor-agent login` (`cursor-agent status` confirms). Model names: `cursor-agent --list-models`.
   - **codex** — available when `codex --version` succeeds. Needs auth: `codex login status` shows logged in, else `codex login` or `OPENAI_API_KEY`. Model = the value in `~/.codex/config.toml` unless overridden.
-  `implementer.model` is optional and **engine-specific** (a cursor model id is not a valid codex one) — blank uses that engine's default.
+  `implementer.model` is optional. For **cursor/codex** it is **engine-specific** (a cursor model id is not a valid codex one) — blank uses that engine's default. For **claude** it is an **Agent-tool alias** (`sonnet`/`opus`/`haiku`) — blank inherits the session model.
+- **Claude-only implementer options** (ignored by cursor/codex):
+  - `implementer.agent` — the subagent type forge invokes via the Agent tool (default `general-purpose`). Any built-in or custom type works, but it MUST have Bash + the tracker CLI + edit tools, or the commit/PR/issue-close steps fail. Read-only types (e.g. `Explore`) are invalid here.
+  - `implementer.workflow` — `false` (default) runs one subagent that builds the child issues sequentially on the single branch. `true` tells the orchestrator to use the **Workflow tool** for a true parallel cycle: `$BRANCH` becomes a **PRD integration branch**, and each dependency-independent child is built **in parallel** on its own issue branch in its own isolated worktree, then squash-merged into the PRD branch via its own PR (merges are serialized to avoid lost updates; forge closes each child by hand since those internal PRs don't target the default branch). The single user gate is still the one PRD-branch → default merge. Setting it `true` is the user's opt-in for forge to run workflows. Review fixes (Phase 4) stay sequential.
 - **Token-efficiency tools** — detect each, propose `true` only if already present, and offer to install the rest (full recipes in [efficiency-tools.md](efficiency-tools.md)):
   - **graphify** — `graphify --version` ok or `graphify-out/graph.json` exists → installed. Install: `pip install graphifyy`. Wire per-repo: `graphify .` (first build) + `graphify claude install` (CLAUDE.md section + Glob/Grep hook). forge refreshes it in Phase 6.
   - **rtk** — `rtk --version` ok → installed. Install: `brew install rtk` (or the curl/cargo forms). Wire global hook: `rtk init -g`, then restart Claude Code.
@@ -57,7 +60,7 @@ Run once per repo. Re-run any time to change choices.
 2. **Default branch** — `<detected>` or blank for run-time auto-detect?
 3. **Checks** — confirm/edit the ordered list of commands the TDD subagent runs and forge re-checks before merge. Each must exit non-zero on failure.
 4. **Issue label** — which label (if any) to tag forge-created issues with?
-5. **Implementer engine** — `claude` (default, no setup), `cursor`, or `codex`? Offer a CLI engine only if its binary is installed; if chosen, confirm that engine's auth is set up and optionally ask for a model (blank = that engine's default).
+5. **Implementer engine** — `claude` (default, no setup), `cursor`, or `codex`? Offer a CLI engine only if its binary is installed; if chosen, confirm that engine's auth is set up and optionally ask for a model (blank = that engine's default). For **claude**, optionally ask: which model alias (`sonnet`/`opus`/`haiku`, blank = inherit), which subagent type (`implementer.agent`, default `general-purpose`), and whether to build children in parallel via workflows (`implementer.workflow`, default `false`).
 6. **graphify** — codebase knowledge graph? If absent, offer to `pip install graphifyy` + build + wire the hook. forge refreshes it in Phase 6. (`true`/`false`)
 7. **rtk** — global token-saving Bash proxy? If absent, offer to install + `rtk init -g`. (`true`/`false`)
 8. **caveman** — global terse-output mode? If absent, offer to install. (`true`/`false`)
@@ -89,8 +92,10 @@ checks:
 #   codex  = the OpenAI `codex exec` CLI headless in the worktree
 #            (needs codex installed + `codex login` or OPENAI_API_KEY).
 implementer:
-  engine: claude       # claude | cursor | codex
-  model: ""            # cursor/codex: model override; "" = that engine's default (model ids are engine-specific)
+  engine: claude          # claude | cursor | codex
+  model: ""               # claude: sonnet|opus|haiku (an Agent-tool alias); cursor/codex: engine-specific id; "" = inherit/default
+  agent: general-purpose  # claude only: which subagent type to invoke (must have Bash + tracker CLI + edit tools)
+  workflow: false         # claude only: true = build child issues in PARALLEL via the Workflow tool — $BRANCH becomes a PRD integration branch, each child built on its own issue branch + worktree and merged in via its own PR (one user gate stays: PRD branch -> default). false = one sequential subagent on one branch.
 
 # Token-efficiency tools (all optional, independent). graphify is per-repo and
 # consumed by forge; rtk and caveman are global/machine-level and work via their
@@ -109,7 +114,7 @@ After writing it:
 ## Notes
 
 - This skill only writes config and (with consent) runs installers; it does not change skill bodies. forge stays stack-agnostic and reads `cli`, `checks`, `default_branch`, `issue_label`, `implementer.*`, and `tools.*` from the file.
-- **Implementer engine is `claude` unless the user opts into a CLI engine (`cursor` or `codex`).** Never write a CLI engine without confirming its binary is installed AND its auth is set up — an unauthed CLI engine hard-blocks forge at Phase 0. When switching engines, reset `model` (ids don't transfer between engines). A missing `implementer` block is read by forge as `claude` (backward-compatible).
+- **Implementer engine is `claude` unless the user opts into a CLI engine (`cursor` or `codex`).** Never write a CLI engine without confirming its binary is installed AND its auth is set up — an unauthed CLI engine hard-blocks forge at Phase 0. When switching engines, reset `model` (ids don't transfer between engines — and the claude vocabulary is the `sonnet`/`opus`/`haiku` aliases, not a cursor/codex id). The claude-only `agent` and `workflow` keys are ignored by the CLI engines. A missing `implementer` block (or missing `agent`/`workflow`) is read by forge as `claude` / `general-purpose` / `workflow:false` (backward-compatible).
 - **Never install a global tool (rtk, caveman) or pip package without the user's explicit OK.** Show the command, confirm, then run it. rtk and caveman need a Claude Code restart to take effect — tell the user.
 - The `tools:` block is optional in older configs; forge also honors a legacy top-level `graphify:` key. New configs should use the block.
 - If `.yaah/config.yml` already exists, show it and ask which fields to change rather than starting over.
