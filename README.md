@@ -102,8 +102,9 @@ Phase 1  GRILL     /grill-with-docs        interactive — lock requirements + d
 Phase 2  PRD+ISSUES /to-prd → /to-issues   publish a PRD parent issue, then child tasks
                                            attached to it (task-list + Parent refs)
 Phase 3  BUILD     /handoff → implementer (claude | cursor | codex) → /tdd
-                                           work the child issues one-by-one in ONE PR/MR —
-                                           one commit per issue, check its PRD box, link the commit
+                                           work the child issues one-by-one in ONE PR/MR (or in parallel
+                                           on per-issue branches when implementer.workflow=true) —
+                                           one commit per issue, check its PRD box, link + close the issue
 Phase 4  REVIEW    /thermo-nuclear-code-quality-review
                                            review → fix loop until clean (no cap)
 Phase 5  RECAP     summarize the run
@@ -174,9 +175,11 @@ checks:                # run in order; each MUST exit non-zero on failure
   - "npm test"
   - "npm run lint"
 
-implementer:           # engine that runs the Phase 3 build + Phase 4 fix loop
-  engine: claude       # claude (Claude Code subagent) | cursor (cursor-agent CLI) | codex (codex exec CLI)
-  model: ""            # cursor/codex: model override, "" = that engine's default
+implementer:              # engine that runs the Phase 3 build + Phase 4 fix loop
+  engine: claude          # claude (Claude Code subagent) | cursor (cursor-agent CLI) | codex (codex exec CLI)
+  model: ""               # claude: sonnet|opus|haiku alias (""=inherit); cursor/codex: engine-specific id (""=default)
+  agent: general-purpose  # claude only: subagent type to invoke (needs Bash + tracker CLI + edit tools)
+  workflow: false         # claude only: true = parallel branch-per-issue build via the Workflow tool
 
 tools:                 # token-efficiency tools (all optional, independent)
   graphify: false      # codebase knowledge graph; forge runs `graphify update .` in Phase 6
@@ -195,8 +198,18 @@ tools:                 # token-efficiency tools (all optional, independent)
 > a bundled `scripts/forge-implement.sh` (the prompt is passed as a `.md` file, argv is built
 > safely, the receipt is parsed) so the orchestrator never hand-assembles a fragile shell
 > command. forge preflights the chosen CLI at Phase 0 (a missing/unauthed binary is a hard
-> blocker). `model` is engine-specific (reset it when switching); a missing `implementer`
-> block reads as `claude`.
+> blocker). `model` is engine-specific — for `claude` it's the `sonnet`/`opus`/`haiku` alias
+> (blank = inherit the session model); reset it when switching engines.
+>
+> **Claude-engine extras.** With `engine: claude` you can also set `agent` (which subagent type
+> forge invokes, default `general-purpose` — it must have Bash + the tracker CLI + edit tools)
+> and `workflow`. Set `workflow: true` for a **true parallel build**: dependency-independent child
+> issues are built concurrently, each on its own issue branch in its own isolated worktree, then
+> squash-merged **one at a time** into a PRD integration branch (the merge is serialized because
+> GitHub won't lock an unprotected branch; each child is closed by hand since its internal PR
+> targets a non-default branch). There is still exactly one user merge gate — that integration
+> branch → default. A missing `implementer` block (or missing `agent`/`workflow`) reads as
+> `claude` / `general-purpose` / `workflow:false`.
 
 > Older configs may carry a top-level `graphify: true` instead of the `tools:` block;
 > forge still honors it. New configs written by `/setup-yaah` use the block.
