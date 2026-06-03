@@ -109,7 +109,7 @@ Phase 4  REVIEW    /thermo-nuclear-code-quality-review
                                            review → fix loop until clean (no cap)
 Phase 5  RECAP     summarize the run
 Phase 6  MERGE     ── the one approval ──
-                   on approval: rebase onto latest default branch → graphify (if on) →
+                   on approval: rebase onto latest default branch → graphify →
                    force-push → re-run the review loop once to verify → merge →
                    tear the worktree down
 ```
@@ -117,7 +117,8 @@ Phase 6  MERGE     ── the one approval ──
 **Phase 6 in detail.** When you approve, `/forge` does not merge blindly. It fetches
 the default branch, **rebases** the PR/MR branch onto the latest tip (a rebase, never a
 merge commit, so concurrent changes are preserved rather than papered over), refreshes
-the knowledge graph if enabled, force-pushes with `--force-with-lease`, and runs the
+the knowledge graph (`graphify update .`, always — skipped only if the binary is absent),
+force-pushes with `--force-with-lease`, and runs the
 review loop **one more time** as verification against the freshly-merged context. Only
 when that pass is clean does it merge. An unresolvable rebase conflict is surfaced as a
 hard blocker instead of being forced.
@@ -152,13 +153,17 @@ under `tools:` in `.yaah/config.yml`.
 
 | Tool | Saves | Scope | forge integration |
 |------|-------|-------|-------------------|
-| **[graphify](https://github.com/safishamsi/graphify)** | input — query a codebase graph instead of grepping/reading raw files | binary global; graph + hook **per-repo** | refreshes the graph in Phase 6 (`graphify update .`) |
-| **[rtk](https://github.com/rtk-ai/rtk)** | input — rewrites shell commands to token-lean equivalents | **global** (machine-level) | transparent — works via its own hook |
-| **[caveman](https://github.com/JuliusBrussee/caveman)** | output — answers the agent gives are made terse | **global** (machine-level) | transparent — works via its own hook |
+| **[graphify](https://github.com/safishamsi/graphify)** | input — query a codebase graph instead of grepping/reading raw files | binary global; graph + hook **per-repo** | **always** — explores via `graphify query` + refreshes the graph in Phase 6 (`graphify update .`) |
+| **[rtk](https://github.com/rtk-ai/rtk)** | input — rewrites shell commands to token-lean equivalents | **global** (machine-level) | **always** — global hook covers the orchestrator + Agent subagents; CLI-engine prompts say "prefix shell with `rtk`" |
+| **[caveman](https://github.com/JuliusBrussee/caveman)** | output — answers the agent gives are made terse | **global** (machine-level) | **always** — global hook covers the orchestrator + Agent subagents; CLI-engine prompts say "keep working output terse" |
 
-Only **graphify** changes forge's behavior; **rtk** and **caveman** operate entirely
-through their global Claude Code hooks, so the agent (and forge's subagents) benefit
-without forge doing anything. Enable any subset — they're orthogonal.
+**forge always uses all three regardless of the `tools.*` flags** and instructs every
+subagent to as well — the flags only record what `/setup-yaah` detected and wired, never a
+gate. **graphify** drives forge's own steps (graphify-first exploration + the Phase 6
+refresh); **rtk** and **caveman** ride their global hooks for the orchestrator and
+Agent-tool subagents, and forge's cursor/codex CLI prompts carry the `rtk` + terse-output
+instructions explicitly because those CLIs run outside the hooks. Code, commits, PR/MR
+bodies, and security notes always stay in normal prose.
 
 ---
 
@@ -227,7 +232,7 @@ anytime to change a value.
   - GitHub → [`gh`](https://cli.github.com/) (`gh auth login`)
   - GitLab → [`glab`](https://gitlab.com/gitlab-org/cli) (`glab auth login`)
 - *(optional)* **Token-efficiency tools** — `/setup-yaah` can install them, or do it yourself:
-  - **graphify** → `pip install graphifyy` (if `tools.graphify: true`, Phase 6 runs `graphify update .`; if absent, forge notes it and continues).
+  - **graphify** → `pip install graphifyy` (forge explores graphify-first and Phase 6 always runs `graphify update .`, regardless of the flag; if the binary is absent, forge notes it and continues).
   - **rtk** → `brew install rtk` then `rtk init -g` (global Bash proxy; restart Claude Code).
   - **caveman** → `curl -fsSL https://raw.githubusercontent.com/JuliusBrussee/caveman/main/install.sh | bash` (Node ≥18; restart Claude Code).
 

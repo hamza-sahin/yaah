@@ -6,9 +6,9 @@ Three optional, independent tools that cut token use while an agent works this r
 
 | Tool | Saves | Scope | forge uses it? |
 |---|---|---|---|
-| **graphify** | input — query a codebase graph instead of grepping/reading raw files | binary global; graph + hook **per-repo** | yes — refreshes the graph in Phase 6 |
-| **rtk** | input — rewrites shell commands to token-lean equivalents | **global** (machine-level) | transparent — no forge action |
-| **caveman** | output — makes the agent answer tersely | **global** (machine-level) | transparent — no forge action |
+| **graphify** | input — query a codebase graph instead of grepping/reading raw files | binary global; graph + hook **per-repo** | **always** — explores via `graphify query` + refreshes the graph in Phase 6; subagent prompts say "graphify-first" |
+| **rtk** | input — rewrites shell commands to token-lean equivalents | **global** (machine-level) | **always** — global hook covers the orchestrator + Agent subagents; CLI-engine prompts say "prefix shell with `rtk`" |
+| **caveman** | output — makes the agent answer tersely | **global** (machine-level) | **always** — global hook covers the orchestrator + Agent subagents; CLI-engine prompts say "keep working output terse" |
 
 "Global" tools affect every project and session on the machine, so install them once.
 graphify's binary is global too, but its graph, hook, and `graphify-out/` are per-repo.
@@ -35,7 +35,9 @@ graphify claude install          # writes a CLAUDE.md section + a per-repo .clau
   files re-process). Commit `graphify-out/` to share the graph with the team, or gitignore it.
 - **Verify:** `graphify --version`; confirm `graphify-out/graph.json` exists.
 
-forge consumes this via `tools.graphify: true`. If the binary is missing at run time,
+forge uses graphify on **every** run, regardless of the `tools.graphify` flag — it explores
+with `graphify query`/`explain`/`path`, refreshes the graph (`graphify update .`) in Phase 6,
+and instructs its subagents to explore graphify-first. If the binary is missing at run time,
 forge notes it and continues — it never hard-fails on graphify.
 
 ---
@@ -97,6 +99,9 @@ tools:
   caveman: true      # global terse-output plugin
 ```
 
-The booleans capture the efficiency stack this repo recommends and what setup wired up.
-Only `graphify` changes forge's behavior; `rtk` and `caveman` operate entirely through
-their global hooks, so the agent benefits without forge doing anything.
+The booleans only record the efficiency stack this repo recommends and what setup wired
+up — **forge always uses all three regardless of the flags** and instructs every subagent
+to as well. graphify drives forge's own steps (graphify-first exploration + the Phase 6
+refresh); `rtk` and `caveman` ride their global hooks for the orchestrator and Agent-tool
+subagents, and forge's cursor/codex CLI prompts carry the `rtk` + terse-output instructions
+explicitly because those CLIs run outside the hooks.
