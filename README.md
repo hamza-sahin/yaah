@@ -184,7 +184,7 @@ implementer:              # engine that runs the Phase 3 build + Phase 4 fix loo
   engine: claude          # claude (Claude Code subagent) | cursor (cursor-agent CLI) | codex (codex exec CLI)
   model: ""               # claude: sonnet|opus|haiku alias (""=inherit); cursor/codex: engine-specific id (""=default)
   agent: general-purpose  # claude only: subagent type to invoke (needs Bash + tracker CLI + edit tools)
-  workflow: false         # claude only: true = parallel branch-per-issue build via the Workflow tool
+  workflow: false         # all engines: true = parallel branch-per-issue build (claude: Workflow tool; cursor/codex: one background forge-implement.sh per child)
 
 tools:                 # token-efficiency tools (all optional, independent)
   graphify: false      # codebase knowledge graph; forge runs `graphify update .` in Phase 6
@@ -206,14 +206,20 @@ tools:                 # token-efficiency tools (all optional, independent)
 > blocker). `model` is engine-specific — for `claude` it's the `sonnet`/`opus`/`haiku` alias
 > (blank = inherit the session model); reset it when switching engines.
 >
-> **Claude-engine extras.** With `engine: claude` you can also set `agent` (which subagent type
-> forge invokes, default `general-purpose` — it must have Bash + the tracker CLI + edit tools)
-> and `workflow`. Set `workflow: true` for a **true parallel build**: dependency-independent child
-> issues are built concurrently, each on its own issue branch in its own isolated worktree, then
-> squash-merged **one at a time** into a PRD integration branch (the merge is serialized because
-> GitHub won't lock an unprotected branch; each child is closed by hand since its internal PR
-> targets a non-default branch). There is still exactly one user merge gate — that integration
-> branch → default. A missing `implementer` block (or missing `agent`/`workflow`) reads as
+> **Claude-engine extra.** With `engine: claude` you can also set `agent` — which subagent type
+> forge invokes (default `general-purpose`; it must have Bash + the tracker CLI + edit tools).
+> cursor/codex ignore it.
+>
+> **Parallel build (any engine).** Set `workflow: true` for a **true parallel build**:
+> dependency-independent child issues are built concurrently, each on its own issue branch in its
+> own worktree, then squash-merged **one at a time** into a PRD integration branch (the merge is
+> serialized because GitHub won't lock an unprotected branch; each child is closed by hand since
+> its internal PR targets a non-default branch). The fan-out differs by engine: **claude** uses the
+> Workflow tool (auto-cleaned worktrees); **cursor/codex** have the orchestrator launch one background
+> `scripts/forge-implement.sh` per child — each with its own per-child handoff in its own
+> `forge-worktree.sh` worktree — and run the serial merge barrier itself (heavier: several concurrent
+> CLI coding agents, so forge caps the concurrency). There is still exactly one user merge gate — that
+> integration branch → default. A missing `implementer` block (or missing `agent`/`workflow`) reads as
 > `claude` / `general-purpose` / `workflow:false`.
 
 > Older configs may carry a top-level `graphify: true` instead of the `tools:` block;
