@@ -147,6 +147,12 @@ hard blocker instead of being forced.
 Only **forge** and **setup-yaah** are original to yaah. The nine sub-skills are
 third-party work — see [Credits](#credits).
 
+yaah also ships three lightweight Claude-engine **agents** (in `agents/`, installed to
+`.claude/agents/`): **implementer** (full tools — the Phase 3 build / Phase 4 fix executor),
+**per-round-reviewer** and **final-reviewer** (read-only — they follow `spec-and-quality-review`
+in PER-ROUND and FINAL mode). They're flow-aware and deliberately short; the rubric lives in the
+skill, not the agent. forge falls back to `general-purpose` if they aren't installed.
+
 ---
 
 ## Token-efficiency tools
@@ -191,7 +197,7 @@ smoke: []              # optional: commands proving the artifact RUNS (boot+heal
 implementer:              # engine that runs the Phase 3 build + Phase 4 fix loop
   engine: claude          # claude (Claude Code subagent) | cursor (cursor-agent CLI) | codex (codex exec CLI)
   model: ""               # claude: sonnet|opus|haiku alias (""=inherit); cursor/codex: engine-specific id (""=default)
-  agent: general-purpose  # claude only: subagent type to invoke (needs Bash + tracker CLI + edit tools)
+  agent: implementer      # claude only: subagent type for build/fix (yaah ships `implementer`; general-purpose also works)
   workflow: false         # all engines: true = parallel branch-per-issue build (claude: Workflow tool; cursor/codex: one background forge-implement.sh per child)
 
 review:                # models for the dispatched reviewers (optional; ""=inherit session model)

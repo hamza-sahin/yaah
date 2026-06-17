@@ -103,7 +103,7 @@ smoke: []
 implementer:
   engine: claude          # claude | cursor | codex
   model: ""               # claude: sonnet|opus|haiku (an Agent-tool alias); cursor/codex: engine-specific id; "" = inherit/default
-  agent: general-purpose  # claude only: which subagent type to invoke (must have Bash + tracker CLI + edit tools)
+  agent: implementer      # claude only: subagent type for the build/fix (must have Bash + tracker CLI + edit tools). yaah ships an `implementer` agent (recommended); `general-purpose` also works.
   workflow: false         # all engines: true = build child issues in PARALLEL — claude via the Workflow tool, cursor/codex via one background forge-implement.sh per child. $BRANCH becomes a PRD integration branch, each child built on its own issue branch + worktree and merged in via its own PR (one user gate stays: PRD branch -> default). false = one sequential implementer on one branch.
 
 # Models for forge's reviewers (both optional; "" = inherit the session model).
