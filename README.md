@@ -11,7 +11,7 @@
 A lightweight, opinionated harness for **Claude Code** that turns a one-line prompt into a
 reviewed, merge-ready pull/merge request — with almost no babysitting.
 
-Its centerpiece is **`/forge`**: a single skill that chains eight focused skills into
+Its centerpiece is **`/forge`**: a single skill that chains ten focused skills into
 one autonomous pipeline. You answer questions during a requirements grilling, then
 approve once before merge. Everything in between — issue creation, implementation,
 code review, fix loops, knowledge-graph refresh, rebasing onto the latest default
@@ -140,8 +140,10 @@ hard blocker instead of being forced.
 | **systematic-debugging** | Phase 3 — invoked when a check won't go green: a four-phase root-cause discipline (investigate → pattern → hypothesis → fix) that replaces blind retry. Bundles `root-cause-tracing.md`, `defense-in-depth.md`, `condition-based-waiting.md`, `find-polluter.sh`. | ✅ | [superpowers](#credits) |
 | **spec-compliance-review** | Phase 4 (leg a) — read-only review that the change does the **right** thing: spec/acceptance-criteria compliance (missing/extra/misunderstood), correctness bugs, and security. Returns a can't-verify-from-diff verdict. | ✅ | [superpowers](#credits) |
 | **thermo-nuclear-code-quality-review** | Phase 4 (leg b) — an unusually strict maintainability review hunting "code-judo" simplifications, giant files, spaghetti growth. | ✅ | [cursor](#credits) |
+| **receiving-code-review** | Phase 4 — the implementer's discipline for review feedback: verify each finding against the code, YAGNI-check, push back with reasoning instead of implementing blindly. | ✅ | [superpowers](#credits) |
+| **writing-skills** | Meta — author and **pressure-test** skills (TDD-for-docs, bulletproofing, the dependency-free subagent test harness). Bundles `testing-skills-with-subagents.md`, `persuasion-principles.md`. | ✅ | [superpowers](#credits) |
 
-Only **forge** and **setup-yaah** are original to yaah. The eight sub-skills are
+Only **forge** and **setup-yaah** are original to yaah. The ten sub-skills are
 third-party work — see [Credits](#credits).
 
 ---
@@ -255,7 +257,7 @@ No language/runtime is required by yaah itself — your `checks` commands decide
 
 yaah only exists because the community shared its work first. 🙏 We wrote the glue —
 the orchestration (`forge`) and the setup interview (`setup-yaah`) are ours — but the
-eight skills it chains together come from people who figured the hard parts out before
+ten skills it chains together come from people who figured the hard parts out before
 us. Huge thanks to them:
 
 - **[mattpocock/skills](https://github.com/mattpocock/skills)** — `grill-with-docs`,
@@ -264,15 +266,16 @@ us. Huge thanks to them:
 - **[cursor/plugins](https://github.com/cursor/plugins/blob/main/cursor-team-kit/skills/thermo-nuclear-code-quality-review/SKILL.md)**
   — `thermo-nuclear-code-quality-review` comes from the Cursor team kit. Thanks, Cursor
   folks.
-- **[obra/superpowers](https://github.com/obra/superpowers)** (MIT) — `systematic-debugging`
-  (SKILL + `root-cause-tracing`, `defense-in-depth`, `condition-based-waiting`, `find-polluter.sh`)
-  is vendored from Superpowers. `spec-compliance-review` is synthesized from its
+- **[obra/superpowers](https://github.com/obra/superpowers)** (MIT) — several skills are
+  vendored directly: `systematic-debugging` (+ `root-cause-tracing`, `defense-in-depth`,
+  `condition-based-waiting`, `find-polluter.sh`), `receiving-code-review`, and `writing-skills`
+  (+ `testing-skills-with-subagents`, `persuasion-principles` — the dependency-free subagent
+  test harness for skill prose). `spec-compliance-review` is synthesized from its
   `task-reviewer-prompt.md` (spec-compliance + can't-verify verdict) and
   `requesting-code-review/code-reviewer.md` (correctness/security rubric). The
-  verify-RED/verify-GREEN and Iron Law hardening of `tdd`, the implementer push-back path
-  (`receiving-code-review`), and the typed implementer-status protocol
-  (`subagent-driven-development`) also draw on its skills. Thanks to Jesse Vincent and the
-  Prime Radiant crew.
+  verify-RED/verify-GREEN and Iron Law hardening of `tdd` and the typed implementer-status
+  protocol (`subagent-driven-development`) also draw on its skills. Thanks to Jesse Vincent
+  and the Prime Radiant crew.
 
 We vendor these here so the pipeline works the moment you clone it — but please check
 out the upstream repos for the canonical versions, updates, and licenses. And if you're

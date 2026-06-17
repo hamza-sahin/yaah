@@ -292,6 +292,9 @@ Two legs, both Skill-tool calls against the PR/MR branch diff. **Merge is gated 
 ```
 Address this code review on PR/MR #<M> (branch <$BRANCH>, worktree <$WORKTREE>) for PRD #<P>.
 Tracker CLI: <CLI>.  Use /tdd: add/adjust tests for any behavior change; keep red → green → refactor.
+Invoke /receiving-code-review and follow it when judging each finding (verify against the code,
+YAGNI-check, reasoned push-back instead of blind implementation). (CLI engines can't call the
+skill — the evaluate-before-fixing steps below are that discipline inlined.)
 Review fixes are normal commits on <$BRANCH> (the one-commit-per-child rule governs the
 initial build, not review fixes); when a fix maps cleanly to one child, reference it in the
 commit body. Do NOT create a new branch.
