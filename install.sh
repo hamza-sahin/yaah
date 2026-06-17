@@ -26,10 +26,12 @@ cp -R "$src/"* "$dest/"
 chmod +x "$dest/forge/scripts/forge-worktree.sh" 2>/dev/null || true
 chmod +x "$dest/systematic-debugging/find-polluter.sh" 2>/dev/null || true
 
-# forge agents (claude engine): the implementer + the two reviewers.
-if [ -d "$here/agents" ]; then
+# forge agents (claude engine): the implementer + the two reviewers. Canonical
+# source lives in the setup-yaah skill so /setup-yaah can install them too.
+agents_src="$src/setup-yaah/agents"
+if [ -d "$agents_src" ]; then
   mkdir -p "$agents_dest"
-  cp -R "$here/agents/"*.md "$agents_dest/"
+  cp -R "$agents_src/"*.md "$agents_dest/"
 fi
 
 echo "yaah installed to: $base"

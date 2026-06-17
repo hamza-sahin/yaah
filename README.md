@@ -147,11 +147,13 @@ hard blocker instead of being forced.
 Only **forge** and **setup-yaah** are original to yaah. The nine sub-skills are
 third-party work — see [Credits](#credits).
 
-yaah also ships three lightweight Claude-engine **agents** (in `agents/`, installed to
-`.claude/agents/`): **implementer** (full tools — the Phase 3 build / Phase 4 fix executor),
-**per-round-reviewer** and **final-reviewer** (read-only — they follow `spec-and-quality-review`
-in PER-ROUND and FINAL mode). They're flow-aware and deliberately short; the rubric lives in the
-skill, not the agent. forge falls back to `general-purpose` if they aren't installed.
+yaah also ships three lightweight Claude-engine **agents** (bundled in
+`skills/setup-yaah/agents/`; both `install.sh` and `/setup-yaah` copy them to `.claude/agents/`):
+**implementer** (full tools — the Phase 3 build / Phase 4 fix executor), **per-round-reviewer**
+and **final-reviewer** (read-only — they follow `spec-and-quality-review` in PER-ROUND and FINAL
+mode). They're flow-aware and deliberately short; the rubric lives in the skill, not the agent.
+The config points each role at its agent (`implementer.agent` / `review.agent` /
+`review.final_agent`); forge falls back to `general-purpose` if they aren't installed.
 
 ---
 
@@ -200,9 +202,11 @@ implementer:              # engine that runs the Phase 3 build + Phase 4 fix loo
   agent: implementer      # claude only: subagent type for build/fix (yaah ships `implementer`; general-purpose also works)
   workflow: false         # all engines: true = parallel branch-per-issue build (claude: Workflow tool; cursor/codex: one background forge-implement.sh per child)
 
-review:                # models for the dispatched reviewers (optional; ""=inherit session model)
-  model: ""            # per-round combined reviewer (cheap/scaled — e.g. haiku/sonnet)
-  final_model: ""      # once-per-run heavy Phase 6 review (most-capable — e.g. opus)
+review:                # the dispatched reviewers — model + subagent type each (optional)
+  model: ""                   # per-round reviewer model (cheap/scaled — e.g. haiku/sonnet); ""=inherit
+  agent: per-round-reviewer   # per-round reviewer agent (read-only; ships with yaah)
+  final_model: ""             # once-per-run heavy Phase 6 review model (most-capable — e.g. opus); ""=inherit
+  final_agent: final-reviewer # Phase 6 reviewer agent (read-only; ships with yaah)
 
 tools:                 # token-efficiency tools (all optional, independent)
   graphify: false      # codebase knowledge graph; forge runs `graphify update .` in Phase 6

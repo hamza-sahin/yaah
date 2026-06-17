@@ -24,6 +24,17 @@ Run once per repo. Re-run any time to change choices.
    anything (these touch global/machine state or need a Claude Code restart — never install
    silently). Record what is enabled under `tools:` in the config. Recipes live in
    [efficiency-tools.md](efficiency-tools.md).
+3. **Install the forge agents** (claude engine). yaah ships three subagents — `implementer`,
+   `per-round-reviewer`, `final-reviewer` — bundled in this skill's [agents/](agents/) subdir.
+   Claude Code reads agents from `.claude/agents/`, so copy them there for this repo:
+   ```bash
+   mkdir -p .claude/agents
+   cp "<this-skill-dir>/agents/"*.md .claude/agents/   # <this-skill-dir> = .../.claude/skills/setup-yaah
+   ```
+   (`<this-skill-dir>` is wherever setup-yaah is installed — `~/.claude/skills/setup-yaah` global,
+   or `<repo>/.claude/skills/setup-yaah` per-project.) Skip files already present unless the user
+   wants them refreshed. These are what `implementer.agent` / `review.agent` / `review.final_agent`
+   in the config point at; if they aren't installed, forge falls back to `general-purpose`.
 
 ## Detection heuristics (propose, don't assume)
 
@@ -106,18 +117,21 @@ implementer:
   agent: implementer      # claude only: subagent type for the build/fix (must have Bash + tracker CLI + edit tools). yaah ships an `implementer` agent (recommended); `general-purpose` also works.
   workflow: false         # all engines: true = build child issues in PARALLEL — claude via the Workflow tool, cursor/codex via one background forge-implement.sh per child. $BRANCH becomes a PRD integration branch, each child built on its own issue branch + worktree and merged in via its own PR (one user gate stays: PRD branch -> default). false = one sequential implementer on one branch.
 
-# Models for forge's reviewers (both optional; "" = inherit the session model).
-# Reviews are dispatched subagents — naming a model keeps each round cheap and
-# stops it silently inheriting the session's most-expensive tier.
-#   model       = the per-round combined reviewer (spec + correctness + security +
-#                 focused quality, one pass). Runs every Phase 4 round — reach for a
-#                 cheaper tier here.
-#   final_model = the once-per-run heavy review at the Phase 6 gate (deep maintainability
-#                 audit + final spec/quality sweep). Reach for the most-capable tier.
-# Values are Agent-tool aliases: sonnet | opus | haiku.  "" = inherit session model.
+# forge's reviewers — dispatched read-only subagents. Each has a model and an agent.
+# Naming a model keeps each round cheap and stops it inheriting the session's most-
+# expensive tier; the agents (per-round-reviewer / final-reviewer) ship with yaah and
+# are installed to .claude/agents/ — both fall back to general-purpose if absent.
+#   model / agent             = the per-round reviewer (PER-ROUND mode: spec + correctness +
+#                               security + focused quality, one pass). Every Phase 4 round —
+#                               reach for a cheaper model tier.
+#   final_model / final_agent = the once-per-run heavy review at the Phase 6 gate (FINAL mode:
+#                               adds the deep maintainability audit). Reach for the most-capable tier.
+# Models are Agent-tool aliases: sonnet | opus | haiku ("" = inherit). Agents are subagent-type names.
 review:
-  model: ""               # per-round combined reviewer (cheap/scaled); "" = inherit
-  final_model: ""         # Phase 6 heavy final review (most-capable); "" = inherit
+  model: ""                   # per-round reviewer model (cheap/scaled); "" = inherit
+  agent: per-round-reviewer   # per-round reviewer subagent type (read-only); ships with yaah
+  final_model: ""             # Phase 6 heavy final review model (most-capable); "" = inherit
+  final_agent: final-reviewer # Phase 6 reviewer subagent type (read-only); ships with yaah
 
 # Token-efficiency tools (all optional, independent). graphify is per-repo and
 # consumed by forge; rtk and caveman are global/machine-level and work via their
