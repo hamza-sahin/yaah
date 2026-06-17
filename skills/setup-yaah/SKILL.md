@@ -41,6 +41,7 @@ Run once per repo. Re-run any time to change choices.
   - `Makefile` with a `test` target → `make test` (and `make lint` if present).
   - `*.gradle*` → `./gradlew test`; `pom.xml` → `mvn test`.
   - none found → ask the user for the test and lint commands.
+- **Smoke (does it run?)** — optional; propose a command that proves the built artifact RUNS, distinct from "tests pass": a server → `<build>` then boot + curl a health endpoint; a CLI → run it with `--help` (or a no-op subcommand); an app/lib that compiles → the build/compile command (`npm run build`, `flutter build <target>`, `cargo build`, `go build ./...`, `mvn -q -DskipTests package`). Propose blank for a pure library with nothing to run. The user confirms or clears it.
 - **Issue label** — list the tracker's labels (`gh label list` / `glab label list`) and ask which to apply to forge-created issues (e.g. `ready-for-agent`). Blank = none.
 - **Implementer engine** — which agent runs forge's Phase 3 build + Phase 4 fix loop. Default **claude** (a Claude Code subagent — no extra setup). Two CLI engines may be offered, each only when its binary is present and authed (warn and keep `claude` otherwise):
   - **cursor** — available when `cursor-agent --version` succeeds. Needs auth ahead of time (non-interactive): `CURSOR_API_KEY`, or a prior `cursor-agent login` (`cursor-agent status` confirms). Model names: `cursor-agent --list-models`.
@@ -59,6 +60,7 @@ Run once per repo. Re-run any time to change choices.
 1. **Issue tracker** — GitHub (`gh`) or GitLab (`glab`)?
 2. **Default branch** — `<detected>` or blank for run-time auto-detect?
 3. **Checks** — confirm/edit the ordered list of commands the TDD subagent runs and forge re-checks before merge. Each must exit non-zero on failure.
+3b. **Smoke** — confirm/edit the optional list of commands that prove the artifact actually runs (or clear it for a library-only repo). Each must exit non-zero on failure.
 4. **Issue label** — which label (if any) to tag forge-created issues with?
 5. **Implementer engine** — `claude` (default, no setup), `cursor`, or `codex`? Offer a CLI engine only if its binary is installed; if chosen, confirm that engine's auth is set up and optionally ask for a model (blank = that engine's default). For **claude**, optionally ask: which model alias (`sonnet`/`opus`/`haiku`, blank = inherit) and which subagent type (`implementer.agent`, default `general-purpose`). For **any engine**, optionally ask whether to build dependency-independent children **in parallel** (`implementer.workflow`, default `false`) — claude fans out via the Workflow tool, cursor/codex via several concurrent background `forge-implement.sh` processes, so for the CLI engines confirm the machine can take it.
 6. **graphify** — codebase knowledge graph? If absent, offer to `pip install graphifyy` + build + wire the hook. forge refreshes it in Phase 6. (`true`/`false`)
@@ -84,6 +86,12 @@ issue_label: ""        # label applied to forge-created issues, or "" for none
 # before merge. Run in order; each MUST exit non-zero on failure.
 checks:
   - "npm test"
+
+# Optional: commands that prove the built artifact actually RUNS, not just that
+# tests/lint pass (boot the server + curl a health endpoint, run the CLI --help,
+# `<build>` then start). Run after checks in the build and re-run in Phase 6.
+# Leave empty for a library-only repo. Each MUST exit non-zero on failure.
+smoke: []
 
 # Engine that runs forge's Phase 3 build and every Phase 4 fix round.
 #   claude = a Claude Code subagent (Agent tool) — no extra setup.
@@ -113,7 +121,7 @@ After writing it:
 
 ## Notes
 
-- This skill only writes config and (with consent) runs installers; it does not change skill bodies. forge stays stack-agnostic and reads `cli`, `checks`, `default_branch`, `issue_label`, `implementer.*`, and `tools.*` from the file.
+- This skill only writes config and (with consent) runs installers; it does not change skill bodies. forge stays stack-agnostic and reads `cli`, `checks`, `smoke`, `default_branch`, `issue_label`, `implementer.*`, and `tools.*` from the file.
 - **Implementer engine is `claude` unless the user opts into a CLI engine (`cursor` or `codex`).** Never write a CLI engine without confirming its binary is installed AND its auth is set up — an unauthed CLI engine hard-blocks forge at Phase 0. When switching engines, reset `model` (ids don't transfer between engines — and the claude vocabulary is the `sonnet`/`opus`/`haiku` aliases, not a cursor/codex id). `agent` is claude-only and ignored by the CLI engines; `workflow` is honored by all engines (cursor/codex fan out via background `forge-implement.sh` instead of the Workflow tool). A missing `implementer` block (or missing `agent`/`workflow`) is read by forge as `claude` / `general-purpose` / `workflow:false` (backward-compatible).
 - **Never install a global tool (rtk, caveman) or pip package without the user's explicit OK.** Show the command, confirm, then run it. rtk and caveman need a Claude Code restart to take effect — tell the user.
 - The `tools:` block is optional in older configs; forge also honors a legacy top-level `graphify:` key. New configs should use the block.

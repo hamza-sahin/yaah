@@ -25,6 +25,24 @@ cmd="${1:-}"
 [ -n "$cmd" ] || die "usage: forge-worktree.sh {create <slug> [base-ref] | remove <path>}"
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"
+
+# Worktree-environment detection: if we're already inside a LINKED worktree
+# (git-dir != git-common-dir), anchor new worktrees at the MAIN working tree
+# (the parent of the common .git dir) so we never nest .forge-worktrees inside a
+# worktree. In the main worktree the two dirs match and repo_root is used as-is.
+git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
+common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+if [ -n "$common_dir" ] && [ "$git_dir" != "$common_dir" ]; then
+  case "$common_dir" in /*) abs_common="$common_dir" ;; *) abs_common="$repo_root/$common_dir" ;; esac
+  main_root="$(cd "$(dirname "$abs_common")" 2>/dev/null && pwd)" || main_root="$repo_root"
+  # Submodule guard: a submodule's common dir lives under <super>/.git/modules/…;
+  # in that case stay in this submodule rather than escaping to the superproject.
+  case "$abs_common" in */.git/modules/*) main_root="$repo_root" ;; esac
+  if [ "$main_root" != "$repo_root" ]; then
+    echo "forge-worktree: inside a linked worktree; anchoring new worktrees at main root $main_root" >&2
+    repo_root="$main_root"
+  fi
+fi
 cd "$repo_root" || die "cannot cd to repo root: $repo_root"
 
 slugify() {

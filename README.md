@@ -11,7 +11,7 @@
 A lightweight, opinionated harness for **Claude Code** that turns a one-line prompt into a
 reviewed, merge-ready pull/merge request — with almost no babysitting.
 
-Its centerpiece is **`/forge`**: a single skill that chains five focused skills into
+Its centerpiece is **`/forge`**: a single skill that chains eight focused skills into
 one autonomous pipeline. You answer questions during a requirements grilling, then
 approve once before merge. Everything in between — issue creation, implementation,
 code review, fix loops, knowledge-graph refresh, rebasing onto the latest default
@@ -182,6 +182,8 @@ issue_label: ""        # label applied to forge-created issues, or "" for none
 checks:                # run in order; each MUST exit non-zero on failure
   - "npm test"
   - "npm run lint"
+smoke: []              # optional: commands proving the artifact RUNS (boot+health, --help,
+                       # build+start). Re-run by forge before merge. Empty = skip (libraries).
 
 implementer:              # engine that runs the Phase 3 build + Phase 4 fix loop
   engine: claude          # claude (Claude Code subagent) | cursor (cursor-agent CLI) | codex (codex exec CLI)
