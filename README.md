@@ -113,8 +113,8 @@ Phase 5  RECAP     summarize the run
 Phase 6  MERGE     ── the one approval ──
                    on approval: rebase onto latest default branch → graphify →
                    force-push → ONE heavy final review on the most-capable model
-                   (/spec-and-quality-review + /thermo-nuclear-code-quality-review)
-                   to verify → merge → tear the worktree down
+                   (/spec-and-quality-review in FINAL mode — adds the deep
+                   maintainability audit) to verify → merge → tear the worktree down
 ```
 
 **Phase 6 in detail.** When you approve, `/forge` does not merge blindly. It fetches
@@ -140,12 +140,11 @@ hard blocker instead of being forced.
 | **handoff** | Phase 3 — compacts context into a tight brief for the implementing subagent. | ✅ | [mattpocock](#credits) |
 | **tdd** | Phase 3 — red→green→refactor with mandatory verify-RED/verify-GREEN (run the test, watch it fail then pass) and the Iron Law. Bundles `tests.md`, `mocking.md`, `deep-modules.md`, `interface-design.md`, `refactoring.md`. | ✅ | [mattpocock](#credits) |
 | **systematic-debugging** | Phase 3 — invoked when a check won't go green: a four-phase root-cause discipline (investigate → pattern → hypothesis → fix) that replaces blind retry. Bundles `root-cause-tracing.md`, `defense-in-depth.md`, `condition-based-waiting.md`, `find-polluter.sh`. | ✅ | [superpowers](#credits) |
-| **spec-and-quality-review** | Phase 4 (per round) + Phase 6 (final) — one dispatched read-only reviewer that reads the diff once and returns BOTH verdicts: spec/acceptance-criteria compliance (missing/extra/misunderstood) + correctness + security, AND focused code quality. Plus a can't-verify-from-diff verdict. Runs cheap every round; strong at the final gate. | ✅ | [superpowers](#credits) |
-| **thermo-nuclear-code-quality-review** | Phase 6 (final gate only) — the once-per-run deep maintainability audit hunting "code-judo" simplifications, giant files, spaghetti growth, on the most-capable model. | ✅ | [cursor](#credits) |
+| **spec-and-quality-review** | The single reviewer, two depth modes. PER-ROUND (Phase 4, cheap, every round): one dispatched read-only pass returning BOTH verdicts — spec/acceptance-criteria compliance (missing/extra/misunderstood) + correctness + security, AND focused code quality — plus a can't-verify-from-diff verdict. FINAL (Phase 6, most-capable, once): the same skill *also* runs a deep, ambitious maintainability audit ("code-judo" simplifications, giant files, spaghetti growth). | ✅ | [superpowers](#credits) + [cursor](#credits) |
 | **receiving-code-review** | Phase 4 — the implementer's discipline for review feedback: verify each finding against the code, YAGNI-check, push back with reasoning instead of implementing blindly. | ✅ | [superpowers](#credits) |
 | **writing-skills** | Meta — author and **pressure-test** skills (TDD-for-docs, bulletproofing, the dependency-free subagent test harness). Bundles `testing-skills-with-subagents.md`, `persuasion-principles.md`. | ✅ | [superpowers](#credits) |
 
-Only **forge** and **setup-yaah** are original to yaah. The ten sub-skills are
+Only **forge** and **setup-yaah** are original to yaah. The nine sub-skills are
 third-party work — see [Credits](#credits).
 
 ---
@@ -270,18 +269,21 @@ us. Huge thanks to them:
   `to-prd`, `to-issues`, `handoff`, and `tdd` are from Matt Pocock's lovely skills
   collection. Go star his repo.
 - **[cursor/plugins](https://github.com/cursor/plugins/blob/main/cursor-team-kit/skills/thermo-nuclear-code-quality-review/SKILL.md)**
-  — `thermo-nuclear-code-quality-review` comes from the Cursor team kit. Thanks, Cursor
+  — the deep maintainability audit (Part 4 / FINAL mode of `spec-and-quality-review`) is
+  condensed from the Cursor team kit's `thermo-nuclear-code-quality-review`. Thanks, Cursor
   folks.
 - **[obra/superpowers](https://github.com/obra/superpowers)** (MIT) — several skills are
   vendored directly: `systematic-debugging` (+ `root-cause-tracing`, `defense-in-depth`,
   `condition-based-waiting`, `find-polluter.sh`), `receiving-code-review`, and `writing-skills`
   (+ `testing-skills-with-subagents`, `persuasion-principles` — the dependency-free subagent
-  test harness for skill prose). `spec-and-quality-review` — forge's one combined per-round
-  reviewer (both verdicts in a single pass) — is adapted from its `subagent-driven-development/task-reviewer-prompt.md`
-  (the one-reviewer / two-verdict / can't-verify design) and `requesting-code-review/code-reviewer.md`
-  (correctness/security rubric). forge's review architecture (one cheap combined reviewer per
-  round, one heavy review on the most-capable model at the end, every dispatch naming its model)
-  follows superpowers' v6.0.0 speed update. The verify-RED/verify-GREEN and Iron Law hardening
+  test harness for skill prose). `spec-and-quality-review` — forge's single all-covering reviewer
+  (both verdicts in one pass, two depth modes) — has its Parts 1–3 adapted from its
+  `subagent-driven-development/task-reviewer-prompt.md` (the one-reviewer / two-verdict /
+  can't-verify design) and `requesting-code-review/code-reviewer.md` (correctness/security rubric),
+  with Part 4's deep maintainability audit folded in from Cursor's thermo-nuclear skill (above).
+  forge's review architecture (one cheap reviewer per round in PER-ROUND mode, the same skill in
+  FINAL mode for one heavy pass on the most-capable model at the end, every dispatch naming its
+  model) follows superpowers' v6.0.0 speed update. The verify-RED/verify-GREEN and Iron Law hardening
   of `tdd` and the typed implementer-status protocol (`subagent-driven-development`) also draw
   on its skills. Thanks to Jesse Vincent
   and the Prime Radiant crew.

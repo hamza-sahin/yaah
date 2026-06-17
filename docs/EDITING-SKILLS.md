@@ -29,9 +29,9 @@ every flagged match by hand. (`writing-skills` has the full method.)
 - `forge` Non-negotiables, Guardrails, the Rationalizations table, the State block, and the
   build / fix / reviewer **prompt templates** in `PLAYBOOK.md`.
 - `tdd` (Iron Law, verify-RED/GREEN), `systematic-debugging` (Iron Law, four phases),
-  `spec-and-quality-review` (combined per-round reviewer — both verdicts, can't-verify,
-  calibration, read-only) / `thermo-nuclear-code-quality-review` (deep final audit),
-  `receiving-code-review` (push-back discipline).
+  `spec-and-quality-review` (the single reviewer — both verdicts, can't-verify, calibration,
+  read-only, and the PER-ROUND vs FINAL depth-mode gate that keeps Part 4's deep audit off
+  the hot loop), `receiving-code-review` (push-back discipline).
 
 Pure docs (README, this file, the config example) don't need this.
 

@@ -1,26 +1,37 @@
 ---
 name: spec-and-quality-review
-description: Use for forge's per-round review — ONE pass over a branch/PR/MR diff that returns BOTH a spec-compliance verdict (missing/extra/misunderstood vs the requirements, plus correctness and security) AND a focused code-quality verdict, with a ⚠️ can't-verify-from-diff verdict for requirements that live in untouched code. Read-only. Dispatched on a cheap/scaled model every review round; the deep maintainability audit (thermo-nuclear) runs once at the final gate, not here.
+description: Use for forge's review — ONE reviewer that covers everything in a single read-only pass over a branch/PR/MR diff. Returns a spec-compliance verdict (missing/extra/misunderstood vs the requirements, plus correctness and security), a code-quality verdict, and a ⚠️ can't-verify-from-diff verdict. Runs in two depth modes: PER-ROUND (focused, cheap — every review round) and FINAL (adds a deep, ambitious maintainability audit — the once-per-run gate on the most-capable model).
 ---
 
-# Spec-and-Quality Review (combined, one pass)
+# Spec-and-Quality Review (one reviewer, everything, two depth modes)
 
-A single read-only reviewer that reads the diff **once** and answers both questions a
+A single read-only reviewer that reads the diff **once** and answers every question a
 merge gate must answer:
 
 1. **Does this change do the right thing?** — spec compliance + correctness + security.
-2. **Is it well-built?** — focused code quality (clean, tested, maintainable).
+2. **Is it well-built?** — code quality (clean, tested, maintainable).
+3. **Could it be dramatically simpler?** — deep maintainability (final mode only).
 
 It returns **two verdicts plus a ⚠️ can't-verify verdict** in one report, so one fix pass
-clears both. This is the **per-round** reviewer — keep it focused and fast. The
-**deep, ambitious maintainability audit** (code-judo restructurings, the ~1000-line
-file smell, spaghetti-growth) is a *separate, once-per-run* pass at the final gate
-(`thermo-nuclear-code-quality-review`); do **not** try to do that depth here — flag only
-quality problems a focused reading surfaces.
+clears everything.
 
 **Core principle:** structurally-beautiful code that does the wrong thing must not pass,
 and code that does the right thing but is unmaintainable must not pass either. A clean
 diff is not a correct diff; a correct diff is not a clean one.
+
+## Two depth modes
+
+You are told which mode you are running in. **Do exactly that mode — no more, no less.**
+
+- **PER-ROUND (default — cheap, focused).** Run Parts 1–3 (spec, correctness/security,
+  focused quality). **Skip Part 4.** This runs every review round, so it must stay fast:
+  flag the quality problems a focused reading surfaces, do **not** go hunting for ambitious
+  restructurings. Prefer a few high-conviction findings over a long list of nits.
+- **FINAL (the once-per-run gate — most-capable model).** Run **all four parts**, including
+  the deep, ambitious maintainability audit in Part 4. This is the one place the heavy
+  structural pass happens, so be thorough and ambitious here.
+
+If the dispatch does not name a mode, assume PER-ROUND.
 
 ## Inputs
 
@@ -92,9 +103,9 @@ requirement and what the caller should check — instead of broadening your sear
 - Secrets in code/logs; weak crypto; unsafe randomness.
 - Unvalidated/untrusted input crossing a trust boundary.
 
-## Part 3 — Focused code quality
+## Part 3 — Code quality (focused — BOTH modes)
 
-Stay focused — this is the per-round pass, not the deep maintainability audit:
+The fast quality read, run in every mode:
 
 - **Separation of concerns** — does each changed file have one clear responsibility?
 - **Error handling** — sound, not swallowed; failures surface with context.
@@ -105,9 +116,47 @@ Stay focused — this is the per-round pass, not the deep maintainability audit:
 - **File growth from THIS change** — did the diff create an already-large file or
   significantly grow one? (Don't flag pre-existing file sizes — judge what this change added.)
 
-Do **not** chase ambitious restructurings or code-judo rewrites here — that depth is the
-final thermo-nuclear pass's lane. Flag the quality problems a focused reading surfaces,
-prefer a few high-conviction findings over a long list of nits.
+In **PER-ROUND** mode stop here: do **not** chase ambitious restructurings — that depth is
+Part 4, the final pass's lane.
+
+## Part 4 — Deep maintainability audit (FINAL mode ONLY)
+
+**Skip this entire part in PER-ROUND mode.** In FINAL mode, this is the one heavy structural
+pass — be **ambitious**. Do not stop at "this could be cleaner": actively search for "code-judo"
+moves — restructurings that preserve behavior while making the implementation dramatically
+simpler, smaller, and more direct. Prefer the solution that makes the code feel inevitable in
+hindsight; prefer **deleting** complexity over rearranging it.
+
+Audit for:
+- **Code-judo simplifications** — a reframing that makes whole branches, helpers, modes,
+  conditionals, or layers disappear. If a path deletes complexity rather than moves it, push hard.
+- **File-size explosion** — a PR pushing a file from under ~1000 lines to over is a strong
+  smell; prefer extracting helpers/modules over letting a file sprawl. Don't flag pre-existing size.
+- **Spaghetti growth** — new ad-hoc conditionals, scattered special cases, or one-off branches
+  bolted into unrelated flows. Push the logic into a dedicated abstraction/state machine/policy
+  object instead of tangling an existing path.
+- **Abstractions earning their keep** — flag thin wrappers, identity/pass-through helpers, and
+  generic "magic" that hides simple data-shape assumptions and adds indirection without clarity.
+- **Type & boundary cleanliness** — question unnecessary optionality, `any`/`unknown`, or
+  cast-heavy code where a clearer type boundary or explicit invariant would simplify control flow.
+- **Canonical layer & reuse** — feature logic leaking into shared paths, implementation details
+  leaking through APIs, or bespoke helpers duplicating an existing canonical utility; push code to
+  the package/module that already owns the concept.
+- **Orchestration & atomicity** — independent work serialized for no reason, or related updates
+  that can leave state half-applied, when the cleaner structure is obvious.
+
+Prefer remedies that remove moving pieces: delete a layer, reframe the state model so conditionals
+vanish, turn special cases into a simpler default flow, replace condition chains with a typed model
+or dispatcher, reuse the canonical helper. Do not be satisfied with a merely cleaner version of the
+same messy idea when a much simpler idea is plausible — but do not invent rework where the design
+is already sound. Be direct and demanding about quality without being rude; do not soften a major
+maintainability issue into a mild suggestion, and do not flood the report with low-value nits when
+there are larger structural issues.
+
+**FINAL-mode approval bar (presumptive blockers unless clearly justified):** a plausible code-judo
+move that would delete real complexity left untaken; a file pushed past ~1000 lines; ad-hoc branching
+that tangles an existing flow; feature checks scattered across shared code; an unnecessary
+abstraction/wrapper/cast-heavy contract; a duplicated canonical helper or logic in the wrong layer.
 
 ## Calibration
 
@@ -116,7 +165,8 @@ cause real problems:
 - **Critical** — bugs, security holes, data-loss risk, broken/missing required functionality.
 - **Important** — a missed requirement, fragile/incorrect behavior, a real test gap,
   maintainability damage you would block a merge over (verbatim duplication of a logic
-  block, swallowed errors, tests that assert nothing); the change can't be trusted until fixed.
+  block, swallowed errors, tests that assert nothing; in FINAL mode, a presumptive blocker
+  above); the change can't be trusted until fixed.
 - **Minor** — polish, "coverage could be broader", style. Never block on these.
 
 If the spec/plan explicitly mandates something this rubric would call a defect, it is still a
@@ -127,9 +177,11 @@ accurate praise makes the rest of the feedback trusted.
 ## Output format
 
 Begin directly with the verdict — no preamble, no process narration. Every line is a verdict,
-a finding with `file:line`, or a check you ran.
+a finding with `file:line`, or a check you ran. State the mode you ran on the first line.
 
 ```
+Mode: per-round | final
+
 ### Spec Compliance
 - ✅ Spec compliant  |  ❌ Issues found: <missing / extra / misunderstood, with file:line>
 - ⚠️ Cannot verify from diff: <requirement + what the caller should check>
@@ -145,7 +197,7 @@ a finding with `file:line`, or a check you ran.
 
 ### Assessment
 Spec: Approved | Needs fixes
-Quality: Approved | Needs fixes
+Quality: Approved | Needs fixes        (in final mode this covers the deep maintainability audit too)
 Reasoning: <1–2 sentence technical assessment>
 ```
 
@@ -157,13 +209,17 @@ both verdicts.
 - Saying "looks good" without actually reading the diff.
 - Marking a nitpick Critical, or a real bug Minor.
 - A finding with no `file:line`, or vague advice ("improve error handling").
-- Chasing an ambitious restructuring here instead of leaving it to the final thermo-nuclear pass.
+- Running Part 4's ambitious-restructuring depth in PER-ROUND mode (that's the cost the modes exist to avoid), or skipping Part 4 in FINAL mode.
 - Refusing to give a clear verdict, or returning only one of the two verdicts.
 
 ---
 
-*Vendored into yaah from [obra/superpowers](https://github.com/obra/superpowers) (MIT) —
-adapted from its `subagent-driven-development/task-reviewer-prompt.md` (the one-reviewer,
-two-verdict, can't-verify design) and `requesting-code-review/code-reviewer.md`
-(correctness/security rubric, read-only review). Kept self-contained so the forge pipeline
-works the moment you clone it, with no dependency on harness-provided review commands.*
+*Vendored into yaah from two MIT sources, merged into one reviewer:*
+- *[obra/superpowers](https://github.com/obra/superpowers) — Parts 1–3 + the one-reviewer,
+  two-verdict, ⚠️ can't-verify design (`subagent-driven-development/task-reviewer-prompt.md`)
+  and the correctness/security rubric (`requesting-code-review/code-reviewer.md`).*
+- *[cursor/plugins](https://github.com/cursor/plugins) team kit — Part 4's deep maintainability
+  audit, condensed from its `thermo-nuclear-code-quality-review` skill.*
+
+*Kept self-contained so the forge pipeline works the moment you clone it, with no dependency
+on harness-provided review commands.*

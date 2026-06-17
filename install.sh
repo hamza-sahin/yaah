@@ -26,7 +26,7 @@ chmod +x "$dest/systematic-debugging/find-polluter.sh" 2>/dev/null || true
 
 echo "yaah installed to: $dest"
 echo "Skills:"
-for d in "$dest"/setup-yaah "$dest"/forge "$dest"/grill-with-docs "$dest"/to-prd "$dest"/to-issues "$dest"/handoff "$dest"/tdd "$dest"/systematic-debugging "$dest"/spec-and-quality-review "$dest"/thermo-nuclear-code-quality-review "$dest"/receiving-code-review "$dest"/writing-skills; do
+for d in "$dest"/setup-yaah "$dest"/forge "$dest"/grill-with-docs "$dest"/to-prd "$dest"/to-issues "$dest"/handoff "$dest"/tdd "$dest"/systematic-debugging "$dest"/spec-and-quality-review "$dest"/receiving-code-review "$dest"/writing-skills; do
   [ -d "$d" ] && echo "  - $(basename "$d")"
 done
 echo
