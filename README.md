@@ -105,14 +105,16 @@ Phase 3  BUILD     /handoff → implementer (claude | cursor | codex) → /tdd
                                            work the child issues one-by-one in ONE PR/MR (or in parallel
                                            on per-issue branches when implementer.workflow=true) —
                                            one commit per issue, check its PRD box, link + close the issue
-Phase 4  REVIEW    spec-compliance (/spec-compliance-review) AND
-                   quality (/thermo-nuclear-code-quality-review), read-only reviewers
-                                           review → fix loop until both clean (no cap)
+Phase 4  REVIEW    one combined reviewer/round (/spec-and-quality-review),
+                   dispatched read-only on a cheap model: spec + correctness +
+                   security + focused quality in ONE pass
+                                           review → fix loop until clean (no cap)
 Phase 5  RECAP     summarize the run
 Phase 6  MERGE     ── the one approval ──
                    on approval: rebase onto latest default branch → graphify →
-                   force-push → re-run the review loop once to verify → merge →
-                   tear the worktree down
+                   force-push → ONE heavy final review on the most-capable model
+                   (/spec-and-quality-review + /thermo-nuclear-code-quality-review)
+                   to verify → merge → tear the worktree down
 ```
 
 **Phase 6 in detail.** When you approve, `/forge` does not merge blindly. It fetches
@@ -138,8 +140,8 @@ hard blocker instead of being forced.
 | **handoff** | Phase 3 — compacts context into a tight brief for the implementing subagent. | ✅ | [mattpocock](#credits) |
 | **tdd** | Phase 3 — red→green→refactor with mandatory verify-RED/verify-GREEN (run the test, watch it fail then pass) and the Iron Law. Bundles `tests.md`, `mocking.md`, `deep-modules.md`, `interface-design.md`, `refactoring.md`. | ✅ | [mattpocock](#credits) |
 | **systematic-debugging** | Phase 3 — invoked when a check won't go green: a four-phase root-cause discipline (investigate → pattern → hypothesis → fix) that replaces blind retry. Bundles `root-cause-tracing.md`, `defense-in-depth.md`, `condition-based-waiting.md`, `find-polluter.sh`. | ✅ | [superpowers](#credits) |
-| **spec-compliance-review** | Phase 4 (leg a) — read-only review that the change does the **right** thing: spec/acceptance-criteria compliance (missing/extra/misunderstood), correctness bugs, and security. Returns a can't-verify-from-diff verdict. | ✅ | [superpowers](#credits) |
-| **thermo-nuclear-code-quality-review** | Phase 4 (leg b) — an unusually strict maintainability review hunting "code-judo" simplifications, giant files, spaghetti growth. | ✅ | [cursor](#credits) |
+| **spec-and-quality-review** | Phase 4 (per round) + Phase 6 (final) — one dispatched read-only reviewer that reads the diff once and returns BOTH verdicts: spec/acceptance-criteria compliance (missing/extra/misunderstood) + correctness + security, AND focused code quality. Plus a can't-verify-from-diff verdict. Runs cheap every round; strong at the final gate. | ✅ | [superpowers](#credits) |
+| **thermo-nuclear-code-quality-review** | Phase 6 (final gate only) — the once-per-run deep maintainability audit hunting "code-judo" simplifications, giant files, spaghetti growth, on the most-capable model. | ✅ | [cursor](#credits) |
 | **receiving-code-review** | Phase 4 — the implementer's discipline for review feedback: verify each finding against the code, YAGNI-check, push back with reasoning instead of implementing blindly. | ✅ | [superpowers](#credits) |
 | **writing-skills** | Meta — author and **pressure-test** skills (TDD-for-docs, bulletproofing, the dependency-free subagent test harness). Bundles `testing-skills-with-subagents.md`, `persuasion-principles.md`. | ✅ | [superpowers](#credits) |
 
@@ -192,6 +194,10 @@ implementer:              # engine that runs the Phase 3 build + Phase 4 fix loo
   model: ""               # claude: sonnet|opus|haiku alias (""=inherit); cursor/codex: engine-specific id (""=default)
   agent: general-purpose  # claude only: subagent type to invoke (needs Bash + tracker CLI + edit tools)
   workflow: false         # all engines: true = parallel branch-per-issue build (claude: Workflow tool; cursor/codex: one background forge-implement.sh per child)
+
+review:                # models for the dispatched reviewers (optional; ""=inherit session model)
+  model: ""            # per-round combined reviewer (cheap/scaled — e.g. haiku/sonnet)
+  final_model: ""      # once-per-run heavy Phase 6 review (most-capable — e.g. opus)
 
 tools:                 # token-efficiency tools (all optional, independent)
   graphify: false      # codebase knowledge graph; forge runs `graphify update .` in Phase 6
@@ -270,11 +276,14 @@ us. Huge thanks to them:
   vendored directly: `systematic-debugging` (+ `root-cause-tracing`, `defense-in-depth`,
   `condition-based-waiting`, `find-polluter.sh`), `receiving-code-review`, and `writing-skills`
   (+ `testing-skills-with-subagents`, `persuasion-principles` — the dependency-free subagent
-  test harness for skill prose). `spec-compliance-review` is synthesized from its
-  `task-reviewer-prompt.md` (spec-compliance + can't-verify verdict) and
-  `requesting-code-review/code-reviewer.md` (correctness/security rubric). The
-  verify-RED/verify-GREEN and Iron Law hardening of `tdd` and the typed implementer-status
-  protocol (`subagent-driven-development`) also draw on its skills. Thanks to Jesse Vincent
+  test harness for skill prose). `spec-and-quality-review` — forge's one combined per-round
+  reviewer (both verdicts in a single pass) — is adapted from its `subagent-driven-development/task-reviewer-prompt.md`
+  (the one-reviewer / two-verdict / can't-verify design) and `requesting-code-review/code-reviewer.md`
+  (correctness/security rubric). forge's review architecture (one cheap combined reviewer per
+  round, one heavy review on the most-capable model at the end, every dispatch naming its model)
+  follows superpowers' v6.0.0 speed update. The verify-RED/verify-GREEN and Iron Law hardening
+  of `tdd` and the typed implementer-status protocol (`subagent-driven-development`) also draw
+  on its skills. Thanks to Jesse Vincent
   and the Prime Radiant crew.
 
 We vendor these here so the pipeline works the moment you clone it — but please check
