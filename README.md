@@ -105,8 +105,9 @@ Phase 3  BUILD     /handoff → implementer (claude | cursor | codex) → /tdd
                                            work the child issues one-by-one in ONE PR/MR (or in parallel
                                            on per-issue branches when implementer.workflow=true) —
                                            one commit per issue, check its PRD box, link + close the issue
-Phase 4  REVIEW    /thermo-nuclear-code-quality-review
-                                           review → fix loop until clean (no cap)
+Phase 4  REVIEW    spec-compliance (/spec-compliance-review) AND
+                   quality (/thermo-nuclear-code-quality-review), read-only reviewers
+                                           review → fix loop until both clean (no cap)
 Phase 5  RECAP     summarize the run
 Phase 6  MERGE     ── the one approval ──
                    on approval: rebase onto latest default branch → graphify →
@@ -135,10 +136,12 @@ hard blocker instead of being forced.
 | **to-prd** | Phase 2 — synthesizes the grilled context into a PRD and files it as the parent issue. | ✅ | [mattpocock](#credits) |
 | **to-issues** | Phase 2 — breaks the PRD into tracer-bullet vertical slices and files them as child issues (Parent ref + PRD task-list) in dependency order. | ✅ | [mattpocock](#credits) |
 | **handoff** | Phase 3 — compacts context into a tight brief for the implementing subagent. | ✅ | [mattpocock](#credits) |
-| **tdd** | Phase 3 — red→green→refactor, behavior tested through public interfaces. Bundles `tests.md`, `mocking.md`, `deep-modules.md`, `interface-design.md`, `refactoring.md`. | ✅ | [mattpocock](#credits) |
-| **thermo-nuclear-code-quality-review** | Phase 4 — an unusually strict maintainability review hunting "code-judo" simplifications, giant files, spaghetti growth. | ✅ | [cursor](#credits) |
+| **tdd** | Phase 3 — red→green→refactor with mandatory verify-RED/verify-GREEN (run the test, watch it fail then pass) and the Iron Law. Bundles `tests.md`, `mocking.md`, `deep-modules.md`, `interface-design.md`, `refactoring.md`. | ✅ | [mattpocock](#credits) |
+| **systematic-debugging** | Phase 3 — invoked when a check won't go green: a four-phase root-cause discipline (investigate → pattern → hypothesis → fix) that replaces blind retry. Bundles `root-cause-tracing.md`, `defense-in-depth.md`, `condition-based-waiting.md`, `find-polluter.sh`. | ✅ | [superpowers](#credits) |
+| **spec-compliance-review** | Phase 4 (leg a) — read-only review that the change does the **right** thing: spec/acceptance-criteria compliance (missing/extra/misunderstood), correctness bugs, and security. Returns a can't-verify-from-diff verdict. | ✅ | [superpowers](#credits) |
+| **thermo-nuclear-code-quality-review** | Phase 4 (leg b) — an unusually strict maintainability review hunting "code-judo" simplifications, giant files, spaghetti growth. | ✅ | [cursor](#credits) |
 
-Only **forge** and **setup-yaah** are original to yaah. The six sub-skills are
+Only **forge** and **setup-yaah** are original to yaah. The eight sub-skills are
 third-party work — see [Credits](#credits).
 
 ---
@@ -250,7 +253,7 @@ No language/runtime is required by yaah itself — your `checks` commands decide
 
 yaah only exists because the community shared its work first. 🙏 We wrote the glue —
 the orchestration (`forge`) and the setup interview (`setup-yaah`) are ours — but the
-six skills it chains together come from people who figured the hard parts out before
+eight skills it chains together come from people who figured the hard parts out before
 us. Huge thanks to them:
 
 - **[mattpocock/skills](https://github.com/mattpocock/skills)** — `grill-with-docs`,
@@ -259,6 +262,15 @@ us. Huge thanks to them:
 - **[cursor/plugins](https://github.com/cursor/plugins/blob/main/cursor-team-kit/skills/thermo-nuclear-code-quality-review/SKILL.md)**
   — `thermo-nuclear-code-quality-review` comes from the Cursor team kit. Thanks, Cursor
   folks.
+- **[obra/superpowers](https://github.com/obra/superpowers)** (MIT) — `systematic-debugging`
+  (SKILL + `root-cause-tracing`, `defense-in-depth`, `condition-based-waiting`, `find-polluter.sh`)
+  is vendored from Superpowers. `spec-compliance-review` is synthesized from its
+  `task-reviewer-prompt.md` (spec-compliance + can't-verify verdict) and
+  `requesting-code-review/code-reviewer.md` (correctness/security rubric). The
+  verify-RED/verify-GREEN and Iron Law hardening of `tdd`, the implementer push-back path
+  (`receiving-code-review`), and the typed implementer-status protocol
+  (`subagent-driven-development`) also draw on its skills. Thanks to Jesse Vincent and the
+  Prime Radiant crew.
 
 We vendor these here so the pipeline works the moment you clone it — but please check
 out the upstream repos for the canonical versions, updates, and licenses. And if you're

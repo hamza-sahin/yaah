@@ -30,13 +30,29 @@ Two sub-skills, in order, both **non-interactive**: Phase 1 already locked the r
    - Publish in dependency order (blockers first) with the configured `issue_label`.
    - **Capture every child issue's number + URL into state (`issues`), in dependency order.**
 
+3. **Self-review the published artifacts (non-interactive, INLINE).** After `to-issues` publishes, before Phase 3, the orchestrator re-reads the PRD + child issues and fixes defects **by editing them in place** (`gh issue edit` / `glab issue update`) — no subagent, no user prompt. Do it **inline, not as an Agent call**: a fresh reviewer subagent on a plan/spec costs ~25 min for no measurable quality gain, while a ~30s inline scan catches the real bugs. Check:
+   - **(a) Coverage** — every PRD user story maps to ≥1 child issue. A story with no child ⇒ add the child.
+   - **(b) DAG validity** — every child's `Blocked by` references a real sibling, there are no cycles, and the dependency order matches publish order. (Order itself is already `to-issues`' job — here you only validate cycles/dangling refs.)
+   - **(c) No placeholders** — reject and rewrite any of: `TBD`/`TODO`/"decide during build"; acceptance criteria like "handle edge cases"/"add validation"/"appropriate error handling"; "Write tests for the above" with no behavior named; "similar to issue N"; a step that says *what* without *how*.
+   - **(d) Interface consistency** — every interface a PRD Implementation Decision names is built by some child; no child consumes a signature no sibling produces.
+   - **(e) Glossary/ADR consistency** — PRD and issue titles use `CONTEXT.md` terms and contradict no ADR.
+
+   Fix every finding inline. The ONLY escape is a genuine internal contradiction the orchestrator cannot resolve from `CONTEXT.md`/ADRs — that is a hard blocker (surface and stop); never bail to the user for anything you can fix by editing an issue.
+
 **One PRD ⇒ one PR.** Unlike the old per-slice model, every child issue is implemented as a single commit on a **single branch / single PR** (Phase 3), and the whole PRD has **one merge gate** (Phase 6). `worktree`, `branch`, `pr`, and `round` are per PRD, not per child. Each **child** issue is closed by the implementer the moment its commit lands (Phase 3, step 2g) — don't wait for the merge, because a `Closes #` ref only fires once the branch reaches the default branch. The **PRD parent** is the exception: leave it open and let the Phase 6 merge auto-close it via the PR/MR's `Closes #<prd>` ref. Keep the PRD task-list current as each child closes.
 
 ## Phase 3 — BUILD (handoff → implementer → tdd)
 
 1. Call the Skill tool with `handoff`, scoped to "prompt a fresh agent to implement the PRD's child issues one-by-one via TDD inside `$WORKTREE`." The doc **references the PRD + every child issue by URL** (in dependency order) + the grilled decisions/doc changes — it does not restate the issue bodies.
 2. Deliver the build prompt to the **configured implementer engine** (`implementer.engine`, default `claude`) — exact mechanics in **Implementer engines** below. The prompt = the handoff doc + the build contract below, with `<CHECKS>` and `<CLI>` filled from config (and the `/tdd` line adapted per engine). For a CLI engine (`cursor`/`codex`) write that prompt to a `.md` file and run `forge-implement.sh` — **never hand-build the CLI command**.
-3. Read the returned receipt; write `pr` (and, for cursor, the session id) into state. A **missing PR/MR after a retry** is a hard blocker. A **failing check is NOT** a blocker — re-run the implementer with tightened guidance (the loop has no cap); only a genuinely unrecoverable failure stops the run.
+3. Read the returned receipt and **react to its typed `status:` line** — do NOT reflex-respawn with the same prompt regardless of why it stopped:
+   - **DONE** → write `pr` (and, for cursor, the session id) into state; proceed to Phase 4.
+   - **DONE_WITH_CONCERNS** → read the concerns; address any correctness/scope issue (a fresh fix dispatch) BEFORE Phase 4; carry the rest into the Phase 5 recap. Then proceed.
+   - **NEEDS_CONTEXT** → supply exactly the missing input named under `needs:` (fetch the issue, resolve the interface from CONTEXT.md/ADRs, etc.) and re-dispatch with it added. Do NOT ask the user — derive it from the locked artifacts; only a true unresolvable contradiction is a hard blocker.
+   - **BLOCKED** → assess the named `blocked:` cause and pick the matching response, not a blind retry: a too-big child → split it into smaller commits and re-dispatch; a wrong model for the task → escalate `implementer.model`; a check that won't go green → it should already have run /systematic-debugging, so re-dispatch with the root-cause findings in the prompt; a genuine architectural problem (3+ fixes failed) → that is the rare hard blocker — surface it and stop.
+   - **`tdd:` line** → if it shows RED was not observed for a behavior, treat it like a DONE_WITH_CONCERNS: re-dispatch to add the missing test-first coverage before review (green checks alone don't prove tests were written first; the build squashes red+green into one commit, so this line is the only RED signal).
+   - A **missing PR/MR** when status claims DONE is a hard blocker.
+   **Stateful re-spawn ledger (no cap, but never stateless).** Every re-dispatch (build retry or BLOCKED follow-up) carries forward: the attempt number for that failure, and a 1–3 line summary of what the previous attempt tried and why it failed. A fresh subagent has no memory of the build, so without this the "3+ fixes → question architecture" escalation can never fire. Keep a per-failing-check attempt counter in state; at 3 consecutive failures on the SAME check, the next dispatch's ONLY job is a /systematic-debugging investigation (find + report root cause) before any further fix.
 
 ### Subagent build prompt (template)
 
@@ -66,8 +82,19 @@ Do this:
 2. Work the child issues IN THE GIVEN ORDER. For EACH child:
    a. Invoke the /tdd skill and follow it strictly: red → green → refactor, one behavior
       at a time, vertical tracer bullets, behavior tested through public interfaces
-      (see tdd/tests.md, tdd/mocking.md). Do NOT create a new branch.
+      (see tdd/tests.md, tdd/mocking.md). Iron Law: no production code without a failing
+      test first — RUN each test and WATCH it fail for the right reason (behavior missing,
+      not a typo) before writing impl, then re-run and watch it pass with nothing else
+      broken; any code written before its failing test gets deleted and rewritten.
+      Requirements are LOCKED (PRD/issues/CONTEXT.md/ADRs) — do /tdd's planning from those
+      and do NOT seek user approval (the locked requirements ARE the approval).
+      Do NOT create a new branch.
    b. Run the configured checks for what you touched (the <CHECKS> list, in order). All must pass.
+      If a check FAILS: do NOT guess-and-retry. Invoke the /systematic-debugging skill and follow
+      it — read the error, reproduce, trace the bad value to its source, form ONE hypothesis, make
+      the smallest fix, re-run. A failing check is a signal, not noise; re-running the same change
+      is not a fix. If you've tried 3+ fixes for the SAME failure, STOP and return status=BLOCKED
+      with the root-cause/architectural concern (see the receipt) instead of looping.
    c. Land EXACTLY ONE commit for this child — squash your red/green/refactor work into it:
       Conventional Commits subject + a body line "Closes #<child>". Push <$BRANCH>.
    d. On the FIRST commit, immediately open the ONE PR/MR (step 3). Later commits: just push to it.
@@ -88,13 +115,25 @@ Do this:
              --body $'Closes #<P>\nCloses #<a>\nCloses #<b>\nCloses #<c>'
      glab: glab mr create --source-branch <$BRANCH> --target-branch <DEFAULT_BRANCH> --title T \
              --description $'Closes #<P>\nCloses #<a>\nCloses #<b>\nCloses #<c>'
-4. Return ONLY this receipt (no prose):
+4. Return ONLY this receipt (no prose). The FIRST line is a typed status:
+   status:  DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
+            DONE = every child built, all checks green, PR open.
+            DONE_WITH_CONCERNS = built + green, but with caveats the orchestrator must read
+              (a deviation from a decision, a fragile area, a deferred-but-noted item).
+            BLOCKED = could not finish (a check you cannot get green after systematic-debugging
+              + 3 fixes, or a root-cause/architectural problem) — name it under `blocked:`.
+            NEEDS_CONTEXT = missing an input you need to proceed (an unreachable issue, an
+              undefined interface, a contradictory requirement) — name it under `needs:`.
+   tdd:     <per child: RED observed (test run, failed for the right reason) + GREEN observed
+            (re-run, passes, nothing else broke). If you did NOT verify RED for a behavior, say so.>
    branch:  <name>
    pr:      #<M> <url>
    prd:     #<P> — boxes checked: <a,b,c>
    closed:  <child issues closed as their commits landed: a,b,c>
    commits: <one line per child: #<child> → <sha>>
    checks:  <each command run + pass/fail>
+   blocked: <only if status=BLOCKED: what's red + the root cause you found + why you stopped>
+   needs:   <only if status=NEEDS_CONTEXT: exactly what's missing>
    summary: <2–4 lines: what you built and any caveat>
 ```
 
@@ -131,7 +170,7 @@ Split the work: **build in parallel, merge serially.** The expensive part (TDD +
   1. `git fetch origin` and create its issue branch off the latest PRD tip: `git checkout -b ${BRANCH}--issue-<child> origin/$BRANCH`. (A brand-new branch — no "already checked out in another worktree" clash; that only bites `$BRANCH` itself, so **agents never check out `$BRANCH` directly**.)
   2. Run the build contract's TDD loop for its **single** child; run the configured checks (all green).
   3. Commit, **push the issue branch**, open a PR **into `$BRANCH`** (`--base $BRANCH`, body `Closes #<child>`).
-  4. Return `{child, prNumber, branch, checks}`. It does **NOT** merge, close the issue, or touch the PRD body — all shared-state writes belong to the merge barrier.
+  4. Return `{status, child, prNumber, branch, checks, tdd}` — `status` is the typed build status (DONE / DONE_WITH_CONCERNS / BLOCKED / NEEDS_CONTEXT) for THIS child, `tdd` certifies RED-then-GREEN was observed. It does **NOT** merge, close the issue, or touch the PRD body — all shared-state writes belong to the merge barrier. A non-DONE child is handled per the typed-status reactions in Phase 3 step 3 (a BLOCKED child and its dependents are deferred/retried with the ledger, not blindly re-run).
 - **Merge barrier (serialized, per layer) — this is the correctness keystone.** GitHub does **not** lock an unprotected `$BRANCH`, so two `gh pr merge` calls firing at once can both "succeed" against a stale base and silently lose an update. So a **single** step (one `agent()`, or the orchestrator) merges the layer's PRs **one at a time, in dependency order**. For each child PR: ensure it's up to date with the freshly-fetched `origin/$BRANCH` tip (if behind, rebase the issue branch onto it, re-run checks, push) → **squash-merge** (`gh pr merge --squash --delete-branch`) → **close the issue** (`gh issue close <child> --reason completed`) → **backlink the PR URL** (the *URL*, not a SHA — the Phase 6 rebase rewrites `$BRANCH` SHAs, so a SHA backlink would dangle) → **flip that child's PRD box** by re-reading the PRD body fresh and writing it back. Because every merge, close, and PRD-body edit happens in this one serial lane, there is no lost-update, no conflicting concurrent merge, and no clobbered PRD task-list. After the layer, confirm its merges are on `origin/$BRANCH` before launching the next layer.
 - **Conflicts are resolved, not dropped.** A textual conflict during the barrier's rebase is resolved (the barrier has both sides) and re-merged. Only a child whose **checks can't go green** is unbuildable: leave its box unchecked, do not close it, note it. A failed/`null` build agent **and any children that depend on it** are deferred — retry the blocker (no cap) and only run its dependents once it has merged; never launch a dependent whose blocker never landed.
 - **Fix rounds stay sequential.** Phase 4 reviews the aggregate `$BRANCH → default` diff and runs fixes as a **single** subagent on `$BRANCH` (configured `agent`/`model`) — not a fan-out. Internal issue-PRs are not separately reviewed; fix-round commits land directly on `$BRANCH` and do not reopen the already-closed child issues.
@@ -188,8 +227,10 @@ ENGINE=… MODE=… EXIT=… STATUS=ok|fail SESSION=… RECEIPT_FILE=… STDOUT_
 - **cursor:** `cursor-agent --version`; `[ -n "$CURSOR_API_KEY" ] || cursor-agent status`. Install: `curl https://cursor.com/install -fsS | bash`; auth: `cursor-agent login`.
 - **codex:** `codex --version`; `codex login status`. Install: `npm i -g @openai/codex`; auth: `codex login` (or `OPENAI_API_KEY`).
 
-*Prompt adaptation (cursor & codex).* Neither CLI has Claude Code skills, so in the prompt file replace the build contract's TDD directive (step 2a — "Invoke the /tdd skill…") — with this inline directive (the per-child loop, one-commit-per-child, task-list, backlink, and close-the-child steps stay verbatim):
-> Work strictly test-first in **red → green → refactor** cycles, one behavior at a time. Build **vertical tracer bullets** (a thin slice through every layer), not horizontal layers. Test behavior through **public interfaces**, never implementation details; mock only true external boundaries (network, clock, filesystem), never internal collaborators. Refactor only on green. Do NOT create a new branch.
+*Prompt adaptation (cursor & codex).* Neither CLI has Claude Code skills, so in the prompt file replace the build contract's **TDD directive** (step 2a — "Invoke the /tdd skill…") and its **debugging directive** (step 2b — "Invoke the /systematic-debugging skill…") with these inline directives (the per-child loop, one-commit-per-child, task-list, backlink, and close-the-child steps stay verbatim):
+> Work strictly test-first in **red → green → refactor** cycles, one behavior at a time. **Iron Law: no production code without a failing test first** — write the test, **RUN it, and watch it FAIL for the right reason** (the behavior is missing, not a typo/import/wrong-assertion) before writing any implementation; then **RUN it again and watch it PASS** with no other test broken. Any production code written before its failing test gets deleted and rewritten test-first. Build **vertical tracer bullets** (a thin slice through every layer), not horizontal layers. Test behavior through **public interfaces**, never implementation details; mock only true external boundaries (network, clock, filesystem), never internal collaborators. Refactor only on green. Requirements are already locked — plan from them, do NOT seek approval. Do NOT create a new branch.
+
+> **When a check fails, debug — don't guess.** Find the root cause before any fix: read the full error/stack trace, reproduce it, check what your change touched, **trace the bad value back to its source** (fix at the source, not the symptom), state ONE hypothesis, make the **smallest** fix, then re-run. Never re-run the same change hoping it passes, and never stack multiple fixes at once. For an order-dependent test failure, bisect which test pollutes shared state. For a flaky timeout, wait on the actual condition, not an arbitrary sleep. If 3 fixes for the SAME failure haven't worked, STOP and report it as BLOCKED with the root cause — do not attempt fix #4.
 
 (Optional alternative: write those standing rules to `$WORKTREE/AGENTS.md` before the run — both `cursor-agent` and `codex` auto-read `AGENTS.md` at the workspace root — and keep the prompt to the actionable task. Inlining is the simpler, self-contained default.)
 
@@ -207,7 +248,7 @@ ENGINE=… MODE=… EXIT=… STATUS=ok|fail SESSION=… RECEIPT_FILE=… STDOUT_
 2. **Dependency layers — reuse the claude-parallel rule verbatim** (topological layers from the Phase 2 order; a layer is mutually-independent children; a dependent waits until its blockers have **merged + pushed to `origin/$BRANCH`**; **undeterminable DAG ⇒ one child per layer**, fully sequential; never run a child alongside its blocker). Layers run in sequence; children within a layer fan out.
 3. **Push `$BRANCH` first** — `git push -u origin $BRANCH` so a child worktree's base-ref resolves to `origin/$BRANCH` (`forge-worktree.sh` dies if neither `origin/$BRANCH` nor a local `$BRANCH` exists). Before each **later** layer, `git fetch origin $BRANCH` (the explicit base-ref path does NOT auto-fetch) so its children branch off a tip that already contains the merged blockers.
 4. **Per-child worktree** — for each child in the layer: `bash <forge-skill-dir>/scripts/forge-worktree.sh create issue-<child> $BRANCH`; parse `WORKTREE=`/`BRANCH=` and **record the child → (worktree, branch) map in state** (the orchestrator owns it — there is no Workflow `isolation:'worktree'` auto-management here). The branch is whatever the script printed (`feat/issue-<child>-<unique>`) — do NOT hand-construct `${BRANCH}--issue-<child>`; record the printed name.
-5. **Per-child prompt file** (`mktemp "${TMPDIR:-/tmp}/forge-prompt-XXXXXX".md`), in order: (a) that child's per-child handoff; (b) a **single-child build contract** (the per-child loop from the claude-parallel build agent above — confirm on the child branch, run the inline-TDD loop for the ONE child, run the configured `<CHECKS>` green, land EXACTLY ONE commit whose body carries `Closes #<child>`, push the issue branch, open a PR **into `$BRANCH`** with `--base $BRANCH` and body `Closes #<child>`; it does **NOT** merge, close the issue, backlink, or touch the PRD body — every shared-state write is the barrier's); (c) the **inline `/tdd` directive verbatim** (the replacement block above — CLI engines can't call the skill); (d) the **efficiency-tools directive verbatim** (graphify-first, `rtk`-prefixed shell, terse output — the CLI runs outside the global hooks). Fill `<CLI>`/`<CHECKS>` from config; the PR base is `$BRANCH`, never the default branch.
+5. **Per-child prompt file** (`mktemp "${TMPDIR:-/tmp}/forge-prompt-XXXXXX".md`), in order: (a) that child's per-child handoff; (b) a **single-child build contract** (the per-child loop from the claude-parallel build agent above — confirm on the child branch, run the inline-TDD loop for the ONE child, run the configured `<CHECKS>` green, land EXACTLY ONE commit whose body carries `Closes #<child>`, push the issue branch, open a PR **into `$BRANCH`** with `--base $BRANCH` and body `Closes #<child>`; it does **NOT** merge, close the issue, backlink, or touch the PRD body — every shared-state write is the barrier's); (c) the **inline `/tdd` AND `/systematic-debugging` directives verbatim** (both replacement blocks above — CLI engines can't call the skills); (d) the **efficiency-tools directive verbatim** (graphify-first, `rtk`-prefixed shell, terse output — the CLI runs outside the global hooks). Fill `<CLI>`/`<CHECKS>` from config; the PR base is `$BRANCH`, never the default branch.
 6. **Fan out (background)** — launch each child's `forge-implement.sh` as a **background** process:
    ```
    bash <forge-skill-dir>/scripts/forge-implement.sh \
@@ -221,12 +262,17 @@ ENGINE=… MODE=… EXIT=… STATUS=ok|fail SESSION=… RECEIPT_FILE=… STDOUT_
 
 ## Phase 4 — REVIEW (loop, no cap)
 
-- **Invoke `/thermo-nuclear-code-quality-review`** (Skill tool) against the PR/MR branch diff. You orchestrate; it runs its full rubric.
-- Apply its bar: code-judo simplifications, the ~1000-line file smell, no scattered special-case branching, abstractions earning their keep, logic in the canonical layer. Prefer few high-conviction findings over many cosmetic nits.
+Two legs, both Skill-tool calls against the PR/MR branch diff. **Merge is gated on both passing.** You orchestrate; each runs its own rubric — never reimplement one.
+
+- **Leg (a) — spec-compliance (correctness, not just style).** thermo-nuclear reviews *maintainability only* (its Approval Bar lists zero correctness/spec items — it explicitly says "do not approve merely because behavior seems correct"), so a structurally-clean implementation that does the **wrong** thing would otherwise pass forge's only gate. Invoke the **vendored `/spec-compliance-review`** skill (Skill tool) against the PR/MR branch diff — it ships with yaah, so this leg never depends on a harness-provided command. It verifies the diff against the **PRD + each child issue's acceptance criteria** for **Missing** (a required behavior absent), **Extra** (built beyond the spec — YAGNI), or **Misunderstood** (built, but not what the criterion meant) requirements, and hunts correctness bugs + security holes (injection, missing authz, secrets, unvalidated trust-boundary input). Pass it the PRD + child acceptance criteria as the requirements. A requirement that lives in code the diff does **not** touch comes back as a **⚠️ can't-verify-from-diff** item — convert it to an explicit fix-task or a Phase 5 recap note; **never turn it into a user question** (that would add a third touchpoint).
+- **Leg (b) — quality.** **Invoke `/thermo-nuclear-code-quality-review`** and apply its bar: code-judo simplifications, the ~1000-line file smell, no scattered special-case branching, abstractions earning their keep, logic in the canonical layer. Prefer few high-conviction findings over many cosmetic nits.
+- **Reviewers are read-only; the orchestrator never softens them.** Every leg reports findings only — it must **not** edit, commit, stage, or `git checkout` anything on `$BRANCH` (a mutated worktree would corrupt the Phase 6 rebase + `--force-with-lease`); all fixes route through the implementer. The orchestrator NEVER instructs a reviewer to suppress, skip, or pre-rate a finding ("call it Minor", "don't flag X", "the PRD chose this") — if attention must be focused, copy the PRD's binding constraints **verbatim** as the lens, never a "don't flag" instruction. Findings cite **file + line**.
 - **Post findings as inline review comments** on the diff (GitHub) or **MR discussions** (GitLab) and **capture each comment/discussion ID** — exact commands in `../setup-yaah/scm-commands.md`. Add a one-line status comment on the PRD linking the PR/MR. Then set verdict:
-  - **approved** — no presumptive blockers remain → Phase 5.
-  - **changes-requested** — re-run the **configured implementer** with the fix prompt below, passing the comment IDs (claude: a new Agent call; cursor: `--resume` the saved session — see *Engine dispatch (fix round)* after the template). It works in the **same `$WORKTREE` / `$BRANCH`** and **replies on each comment thread** (`gh api …/replies` / `glab api …/discussions/{id}/notes`). Then re-run this phase, `round += 1`.
-- **No cap.** Repeat until approved. Do not escalate to the user; do not give up on ordinary findings.
+  - **approved** — **both legs** clean (no spec defect, no quality blocker) → Phase 5.
+  - **changes-requested** — either leg has a finding. Re-run the **configured implementer** with the fix prompt below, passing the comment IDs (claude: a new Agent call; cursor: `--resume` the saved session — see *Engine dispatch (fix round)* after the template). It works in the **same `$WORKTREE` / `$BRANCH`** and **replies on each comment thread** (`gh api …/replies` / `glab api …/discussions/{id}/notes`). Then re-run this phase, `round += 1`.
+- **Adjudicate declined findings — the implementer doesn't get the last word, and neither do you.** The fix receipt's `declined:` list is the implementer's reasoned push-back on findings it judged wrong / breaking / YAGNI. Do NOT silently accept or drop them, and never downgrade a finding yourself. Carry each declined finding's comment ID + reasoning in state (`declined`), and on the next review round **re-present them to the reviewer** to re-judge — a stated rationale never downgrades severity; only the reviewer can withdraw a finding. A finding is resolved when the implementer fixed it **OR** the reviewer, shown the reasoning, does not re-raise it. The verdict CANNOT be **approved** while any reviewer-raised Critical/Important finding is neither fixed nor reviewer-withdrawn. This is exactly what lets the no-cap loop terminate on a genuinely-wrong finding (reviewer drops it) without letting the implementer evaporate a real one (reviewer re-raises it).
+- Cost shaping: the diffs are git-derived by the skills (forge never pastes a diff); both legs read the same branch diff. `spec-compliance-review` scopes correctness/security to what the diff touches, so a security-irrelevant diff costs little.
+- **No cap.** Repeat until both legs approve — every reviewer-raised Critical/Important finding either fixed or reviewer-withdrawn. Do not escalate to the user; do not give up on ordinary findings.
 
 ### Subagent fix prompt (template)
 
@@ -242,24 +288,38 @@ not raw grep / whole-file reads), run shell through `rtk`, keep your working/sta
 terse (caveman). Write CODE, COMMIT messages, review replies, and any SECURITY note in
 NORMAL prose. If a tool is genuinely absent, fall back and keep going.
 
-Findings to resolve (each with its comment/discussion id):
+Findings to address (each with its comment/discussion id):
 <paste the review findings + comment IDs>
+
+EVALUATE each finding before changing anything — do NOT implement blindly:
+  - Verify it against the actual code. Is it correct? Would the change it asks for break
+    existing behavior or a passing test?
+  - YAGNI-check: does it ask for something the PRD/issues do not require? grep for a real
+    caller/need before "implementing it properly".
+  - If the finding is right → fix it (test-first; step 2).
+  - If the finding is WRONG, would BREAK behavior, or is YAGNI → do NOT implement it. Reply on
+    its thread with technical reasoning (cite code/tests) and list it under `declined:`. A
+    declined finding is a CLAIM to the reviewer, not a settled fact — the next round re-judges it.
 
 Do this:
 1. Work in the EXISTING worktree <$WORKTREE> on <$BRANCH>. Do not create a new branch.
-2. Re-run the configured checks for what you touched.
-3. Reply on each comment thread you resolved:
-   gh:   gh api repos/{owner}/{repo}/pulls/<M>/comments/<id>/replies -f body="…how fixed"
-   glab: glab api -X POST "projects/:id/merge_requests/<M>/discussions/<id>/notes" -f body="…how fixed"
-4. Push. Return ONLY:
+2. Fix each accepted finding via /tdd (red → green → refactor for any behavior change).
+3. Re-run the configured checks for what you touched. If a check FAILS, invoke /systematic-debugging
+   (root cause first — never guess-and-retry).
+4. Reply on each comment thread (how you fixed it, or — if declined — your technical reasoning):
+   gh:   gh api repos/{owner}/{repo}/pulls/<M>/comments/<id>/replies -f body="…"
+   glab: glab api -X POST "projects/:id/merge_requests/<M>/discussions/<id>/notes" -f body="…"
+5. Push. Return ONLY:
+   status:   DONE | DONE_WITH_CONCERNS | BLOCKED
    checks:   <commands + pass/fail>
-   resolved: <finding → what changed>
-   open:     <anything you intentionally did not change, with why>
+   resolved: <finding id → what changed>
+   declined: <finding id → why it is wrong/breaking/YAGNI (your technical reasoning)>
+   open:     <anything you could not finish, with why>
 ```
 
 **Engine dispatch (fix round).** Same engines as Phase 3's **Implementer engines**, resuming context:
 - `claude`: a fresh Agent call using the configured `implementer.agent` (default `general-purpose`) and `implementer.model` (alias when set, else omit), prompt = the fix prompt above. (Pass the build summary in the prompt — a new subagent has no memory of the build.) Fix rounds are a **single** subagent on `$BRANCH` even when `implementer.workflow: true` — the workflow fan-out is for the initial build only.
-- `cursor` / `codex`: write the fix prompt to a `.md` file and re-run the script with `--mode fix` —
+- `cursor` / `codex`: write the fix prompt to a `.md` file and re-run the script with `--mode fix`. As in the build, **replace the `/tdd` and `/systematic-debugging` references in the fix prompt with the two inline directives** (the CLI can't call the skills) — keep the evaluate-before-fixing / push-back steps and the typed-`status:`/`declined:` receipt verbatim. —
   ```
   bash <forge-skill-dir>/scripts/forge-implement.sh \
     --engine "$ENGINE" --workspace "$WORKTREE" --prompt-file "$FIX_PROMPT_FILE" --mode fix \

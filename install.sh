@@ -22,10 +22,11 @@ fi
 mkdir -p "$dest"
 cp -R "$src/"* "$dest/"
 chmod +x "$dest/forge/scripts/forge-worktree.sh" 2>/dev/null || true
+chmod +x "$dest/systematic-debugging/find-polluter.sh" 2>/dev/null || true
 
 echo "yaah installed to: $dest"
 echo "Skills:"
-for d in "$dest"/setup-yaah "$dest"/forge "$dest"/grill-with-docs "$dest"/to-issues "$dest"/handoff "$dest"/tdd "$dest"/thermo-nuclear-code-quality-review; do
+for d in "$dest"/setup-yaah "$dest"/forge "$dest"/grill-with-docs "$dest"/to-prd "$dest"/to-issues "$dest"/handoff "$dest"/tdd "$dest"/systematic-debugging "$dest"/spec-compliance-review "$dest"/thermo-nuclear-code-quality-review; do
   [ -d "$d" ] && echo "  - $(basename "$d")"
 done
 echo

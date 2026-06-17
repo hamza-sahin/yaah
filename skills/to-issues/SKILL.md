@@ -7,7 +7,7 @@ description: Break a plan, spec, or PRD into independently-grabbable issues on t
 
 Break a plan into independently-grabbable issues using vertical slices (tracer bullets).
 
-The issue tracker and triage label vocabulary should have been provided to you — run `/setup-matt-pocock-skills` if not.
+The issue tracker (`cli`: `gh` or `glab`) and triage label vocabulary (`issue_label`) come from `.yaah/config.yml` at the repo root — read it if they weren't already provided, and run `/setup-yaah` if that file is missing.
 
 ## Process
 
